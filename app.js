@@ -11,7 +11,7 @@ import deck from './view-deck.js';
 import tools from './view-tools.js';
 import settings from './view-settings.js';
 
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools };
 const TABS = [
@@ -280,8 +280,28 @@ window.addEventListener('scroll', () => {
 
 let swReg = null;
 let lastCheck = 0;
+let offered = null;
+
+// Нова версія готова: пропонуємо оновитися. Повторно — після повернення в застосунок,
+// бо повідомлення могло зникнути під іншим.
+function offerUpdate(worker, again = false) {
+  if (!worker || !navigator.serviceWorker.controller) return;
+  if (offered === worker && !again) return;
+  offered = worker;
+  toast('Доступна нова версія ОПОРА 365', { label: 'Оновити', run: () => { store.flush().finally(() => worker.postMessage('skip-waiting')); } }, Infinity);
+}
+
+// Стежимо за версією, що встановлюється. Оновлення могло почати встановлюватися
+// ще до реєстрації (перевірку браузер запускає сам під час відкриття сторінки).
+function track(worker) {
+  if (!worker) return;
+  if (worker.state === 'installed') { offerUpdate(worker); return; }
+  worker.addEventListener('statechange', () => { if (worker.state === 'installed') offerUpdate(worker); });
+}
+
 export function checkUpdate(force = false) {
   if (!swReg) return Promise.resolve('none');
+  if (swReg.waiting) { offerUpdate(swReg.waiting, true); return Promise.resolve('found'); }
   if (!force && Date.now() - lastCheck < 30 * 60e3) return Promise.resolve('skip');
   lastCheck = Date.now();
   return swReg.update().then(() => (swReg.waiting || swReg.installing ? 'found' : 'latest')).catch(() => 'offline');
@@ -291,16 +311,11 @@ app.checkUpdate = checkUpdate;
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   const hadController = !!navigator.serviceWorker.controller;
-  const offer = (worker) => toast('Доступна нова версія ОПОРА 365', { label: 'Оновити', run: () => { store.flush().finally(() => worker.postMessage('skip-waiting')); } }, Infinity);
   navigator.serviceWorker.register('./sw.js').then((reg) => {
     swReg = reg;
-    if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
-    reg.addEventListener('updatefound', () => {
-      const w = reg.installing;
-      w?.addEventListener('statechange', () => {
-        if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w);
-      });
-    });
+    if (reg.waiting) offerUpdate(reg.waiting);
+    track(reg.installing);
+    reg.addEventListener('updatefound', () => track(reg.installing));
   }).catch(() => { /* без Service Worker застосунок працює онлайн */ });
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {

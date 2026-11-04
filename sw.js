@@ -1,7 +1,7 @@
 // ОПОРА 365 — Service Worker: кешує лише файли застосунку, щоб він відкривався без інтернету.
 // Особисті дані сюди не потрапляють: вони живуть в IndexedDB/localStorage на пристрої.
 // Після зміни будь-якого файлу збільште VERSION — застосунок запропонує оновитися.
-const VERSION = 'opora-2.0.0';
+const VERSION = 'opora-2.0.1';
 
 const FILES = [
   './',
@@ -34,10 +34,15 @@ const FILES = [
 ];
 
 self.addEventListener('install', (event) => {
-  // Усі файли або нічого: напівоновлений кеш не активується.
-  event.waitUntil(
-    caches.open(VERSION).then((cache) => cache.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })))),
-  );
+  event.waitUntil((async () => {
+    // Усі файли або нічого: напівоновлений кеш не активується.
+    const cache = await caches.open(VERSION);
+    await cache.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })));
+    // Перехід з першої версії (1.x) — автоматичний: стара сторінка сама перезавантажиться
+    // в нову, щойно ця версія візьме керування. Наступні оновлення — кнопкою «Оновити».
+    const keys = await caches.keys();
+    if (keys.some((k) => /^opora-1\./.test(k))) await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
