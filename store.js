@@ -1,16 +1,17 @@
-// ОПОРА — локальне збереження на пристрої.
+// ОПОРА 365 — локальне збереження на пристрої.
 // Основне сховище — IndexedDB; синхронна копія в localStorage гарантує, що зміна
 // не загубиться, навіть якщо застосунок закрили одразу після дії.
 // Нічого не передається в мережу і не потрапляє в кеш Service Worker.
-import { cleanState } from './logic.js';
+import { cleanState, SCHEMA } from './logic.js';
 
 const DB_NAME = 'opora';
 const STORE = 'kv';
 const KEY = 'state';
+const KEY_PREV = 'state-before-v2';
 const LS_KEY = 'opora.state';
 const LS_BEFORE_IMPORT = 'opora.before-import';
 
-export const status = { idb: null, ls: null };
+export const status = { idb: null, ls: null, migratedFrom: 0, hasPrev: false };
 
 let dbp = null;
 function openDB() {
@@ -42,14 +43,35 @@ function tx(mode, fn) {
   }));
 }
 
-export async function load() {
+const lsGet = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
+
+// Завантаження з безпечною міграцією: дані старої схеми спершу зберігаються як є.
+export async function load(nowMs = Date.now()) {
   let a = null, b = null;
   try { a = await tx('readonly', (s) => s.get(KEY)); status.idb = true; } catch { status.idb = false; }
   try { b = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); status.ls = true; } catch { status.ls = false; }
   const candidates = [a, b].filter((x) => x && typeof x === 'object');
   candidates.sort((x, y) => (Number(y.updatedAt) || 0) - (Number(x.updatedAt) || 0));
   const raw = candidates[0] || null;
-  return { state: cleanState(raw).state, fresh: !raw };
+  if (raw && Number(raw.v) < SCHEMA) {
+    status.migratedFrom = Number(raw.v) || 1;
+    try {
+      const kept = await tx('readonly', (s) => s.get(KEY_PREV));
+      if (!kept) await tx('readwrite', (s) => s.put({ savedAt: nowMs, data: raw }, KEY_PREV));
+    } catch { lsSet('opora.state-before-v2', { savedAt: nowMs, data: raw }); }
+  }
+  status.hasPrev = !!(await previousData());
+  return { state: cleanState(raw, nowMs).state, fresh: !raw };
+}
+
+// Копія даних, якими користувався застосунок до оновлення 2.0 (якщо була).
+export async function previousData() {
+  try {
+    const v = await tx('readonly', (s) => s.get(KEY_PREV));
+    if (v) return v;
+  } catch { /* немає доступу */ }
+  return lsGet('opora.state-before-v2');
 }
 
 let timer = 0;
@@ -58,7 +80,7 @@ let pending = null;
 export function save(state) {
   state.updatedAt = Date.now();
   pending = state;
-  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); status.ls = true; } catch { status.ls = false; }
+  status.ls = lsSet(LS_KEY, state);
   clearTimeout(timer);
   timer = setTimeout(flush, 250);
 }
@@ -78,15 +100,11 @@ export async function wipe() {
   try { await tx('readwrite', (s) => s.delete(KEY)); } catch { /* немає доступу */ }
 }
 
-export function keepBeforeImport(state) {
-  try { localStorage.setItem(LS_BEFORE_IMPORT, JSON.stringify(state)); return true; } catch { return false; }
-}
+export function keepBeforeImport(state) { return lsSet(LS_BEFORE_IMPORT, state); }
 export function takeBeforeImport() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(LS_BEFORE_IMPORT) || 'null');
-    localStorage.removeItem(LS_BEFORE_IMPORT);
-    return raw ? cleanState(raw).state : null;
-  } catch { return null; }
+  const raw = lsGet(LS_BEFORE_IMPORT);
+  try { localStorage.removeItem(LS_BEFORE_IMPORT); } catch { /* немає доступу */ }
+  return raw ? cleanState(raw).state : null;
 }
 
 // Постійне сховище: браузер не очищатиме дані автоматично (якщо дозволить).

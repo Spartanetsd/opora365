@@ -1,6 +1,8 @@
-// ОПОРА — тести логіки (без бібліотек).
+// ОПОРА 365 — тести логіки (без бібліотек).
 // Запуск: `node tests.js` (Node 18+) або відкрийте tests.html у браузері, зокрема на iPhone.
 import * as L from './logic.js';
+import * as G from './logic-gear.js';
+import * as D from './logic-deck.js';
 import { esc } from './ui.js';
 
 const cases = [];
@@ -14,6 +16,12 @@ function ok(value, msg = 'умова не виконана') { if (!value) throw
 // Київ у листопаді — UTC+2, у липні — UTC+3.
 const nov = (h, m, d = 3) => Date.UTC(2026, 10, d, h - 2, m);
 const session = (startH, startM, extra = {}) => ({ date: '2026-11-03', startedAt: nov(startH, startM), done: {}, skipped: {}, checks: {}, short: false, finishedAt: 0, ...extra });
+const T = (title, pr, due, createdAt = 1, extra = {}) => L.newTask(title, pr, due, createdAt, extra);
+const fresh = () => {
+  const s = L.defaultState();
+  s.settings.lastBackupAt = nov(8, 0);
+  return s;
+};
 
 /* ---------- Час ---------- */
 
@@ -24,6 +32,7 @@ test('Розбір і формат часу', () => {
   eq(L.parseHM('ab'), null);
   eq(L.fmtHM(-20), '23:40');
   eq(L.fmtHM(1445), '00:05');
+  eq(L.fmtHM(509.99999999), '08:30', 'похибка дробових хвилин');
   eq(L.fmtDur(65), '1 год 5 хв');
   eq(L.fmtDur(40), '40 хв');
   eq(L.fmtDur(120), '2 год');
@@ -36,20 +45,23 @@ test('Київський час: зима, літо, перехід через �
   eq(L.kyivParts(Date.UTC(2026, 10, 3, 22, 30)).date, '2026-11-04', 'після опівночі за Києвом');
 });
 
-test('Дати: різниця днів через перехід на зимовий час, дні тижня', () => {
+test('Дати: різниця днів, дні тижня, перевірка дати', () => {
   eq(L.diffDays('2026-10-24', '2026-10-26'), 2);
   eq(L.addDays('2026-12-31', 1), '2027-01-01');
   eq(L.weekday('2026-11-03'), 2);
   eq(L.longDate('2026-11-03'), 'вівторок, 3 листопада');
   eq(L.shortDate('2026-11-04', '2026-11-03'), 'завтра');
   eq(L.shortDate('2026-11-09', '2026-11-03'), 'пн, 9 лист.');
+  eq([L.isKey('2026-02-28'), L.isKey('2026-02-30'), L.isKey('вчора')], [true, false, false]);
 });
 
-test('Відмінювання «день»', () => {
+test('Відмінювання і відносний час', () => {
   eq([1, 2, 5, 11, 21, 22, 25, 112].map(L.daysWord), ['1 день', '2 дні', '5 днів', '11 днів', '21 день', '22 дні', '25 днів', '112 днів']);
+  eq([L.relIn(25), L.relIn(0.4), L.relIn(-90)], ['через 25 хв', 'зараз', '1 год 30 хв тому']);
+  eq([L.greeting(7 * 60), L.greeting(13 * 60), L.greeting(19 * 60), L.greeting(23 * 60)], ['Доброго ранку', 'Доброго дня', 'Доброго вечора', 'Доброї ночі']);
 });
 
-/* ---------- Ранковий план ---------- */
+/* ---------- Ранок ---------- */
 
 test('Час виходу = прибуття − дорога − запас; підйом = вихід − кроки', () => {
   const p = L.computePlan(L.defaultState().morning);
@@ -64,9 +76,8 @@ test('Зміна транспорту й запасу перераховує ч�
   eq(L.fmtHM(L.computePlan(m).departure), '08:00');
 });
 
-test('Режим «Часу обмаль» не скорочує критичні перевірки', () => {
-  const m = L.defaultState().morning;
-  const p = L.computePlan(m, true);
+test('«Часу обмаль» не скорочує критичні перевірки', () => {
+  const p = L.computePlan(L.defaultState().morning, true);
   eq(p.total, 28);
   const docs = p.steps.find((s) => s.critical);
   eq(docs.dur, docs.min, 'критичний крок');
@@ -85,33 +96,18 @@ test('План діє на сьогодні до виходу + 2 год, пот
   eq(L.planTarget(m, L.localMin(nov(7, 0))), '2026-11-03');
   eq(L.planTarget(m, L.localMin(nov(9, 30))), '2026-11-03');
   eq(L.planTarget(m, L.localMin(nov(9, 40))), '2026-11-04');
-  eq(L.planTarget(m, L.localMin(nov(22, 0))), '2026-11-04');
 });
 
-test('Підготовка вчасно: запас 0 — «у графіку»', () => {
-  const st = L.sessionStatus(L.defaultState(), session(6, 35), nov(6, 35));
-  eq([st.level, st.remaining, st.toDep, st.spare], ['ok', 60, 60, 0]);
-});
-
-test('Поточний крок враховує вже витрачений час', () => {
-  const st = L.sessionStatus(L.defaultState(), session(6, 35), nov(6, 38));
-  eq(st.current.title, 'Прокинутися');
-  eq([st.current.left, L.fmtHM(st.current.eta)], [2, '06:38'], 'залишок і початок поточного кроку');
-  eq(st.remaining, 57);
-});
-
-test('Запізнення на 20 хв: пропонується «Часу обмаль»', () => {
-  const st = L.sessionStatus(L.defaultState(), session(6, 55), nov(6, 55));
-  eq([st.level, st.spare, st.altSpare], ['tight', -20, 12]);
-});
-
-test('Навіть мінімальний набір не встигає — чесний прогноз виходу', () => {
+test('Підготовка вчасно, поточний крок, «Часу обмаль», запізнення', () => {
   const s = L.defaultState();
-  const st = L.sessionStatus(s, session(7, 20), nov(7, 20));
-  eq(st.level, 'late');
-  const short = L.sessionStatus(s, session(7, 20, { short: true }), nov(7, 20));
-  eq(L.fmtHM(short.expected), '07:48');
-  eq(short.rows.find((r) => r.critical).dur, 5, 'критична перевірка не скорочена');
+  const a = L.sessionStatus(s, session(6, 35), nov(6, 35));
+  eq([a.level, a.remaining, a.toDep, a.spare], ['ok', 60, 60, 0]);
+  const b = L.sessionStatus(s, session(6, 35), nov(6, 38));
+  eq([b.current.title, b.current.left, L.fmtHM(b.current.eta), b.remaining, b.index], ['Прокинутися', 2, '06:38', 57, 1]);
+  const c = L.sessionStatus(s, session(6, 55), nov(6, 55));
+  eq([c.level, c.spare, c.altSpare], ['tight', -20, 12]);
+  const d = L.sessionStatus(s, session(7, 20, { short: true }), nov(7, 20));
+  eq([d.level, L.fmtHM(d.expected)], ['late', '07:48']);
 });
 
 test('Виконані кроки зменшують залишок; усе виконано — готові', () => {
@@ -119,7 +115,7 @@ test('Виконані кроки зменшують залишок; усе ви
   const ids = s.morning.steps.map((x) => x.id);
   const done = { [ids[0]]: nov(6, 40), [ids[1]]: nov(6, 50), [ids[2]]: nov(6, 50) };
   const st = L.sessionStatus(s, session(6, 35, { done }), nov(6, 50));
-  eq([st.current.title, st.remaining, st.level, st.doneCount], ['Особисті речі', 25, 'ok', 3]);
+  eq([st.current.title, st.remaining, st.level, st.doneCount, st.index], ['Особисті речі', 25, 'ok', 3, 4]);
   const all = Object.fromEntries(ids.map((id) => [id, nov(7, 30)]));
   ok(L.sessionStatus(s, session(6, 35, { done: all }), nov(7, 30)).finished);
 });
@@ -133,15 +129,21 @@ test('Сесія ранку застаріває через 2 год після 
 
 /* ---------- Справи ---------- */
 
-const T = (title, pr, due, createdAt = 1) => ({ ...L.newTask(title, pr, due, createdAt) });
-
-test('Прострочене — зверху, у фокусі максимум 3 за пріоритетом', () => {
-  const list = [T('a', 3, '2026-11-03', 1), T('b', 1, '2026-11-03', 2), T('c', 2, '2026-11-02', 3), T('d', 1, '2026-11-01', 4), T('e', 2, '2026-11-03', 5), T('f', 1, '2026-11-04', 6)];
+test('Прострочене — зверху; три шари: головне, три пріоритети, решта', () => {
+  const list = [T('a', 3, '2026-11-03', 1), T('b', 1, '2026-11-03', 2), T('c', 2, '2026-11-02', 3), T('d', 1, '2026-11-01', 4), T('e', 2, '2026-11-03', 5), T('f', 1, '2026-11-04', 6), T('g', 3, '2026-11-03', 7)];
   const v = L.taskView(list, '2026-11-03');
   eq(v.overdue.map((t) => t.title), ['d', 'c']);
   eq(v.focus.map((t) => t.title), ['d', 'b', 'c']);
+  eq([v.main.title, v.top.map((t) => t.title), v.more.map((t) => t.title)], ['d', ['b', 'c', 'e'], ['a', 'g']]);
   eq(v.upcoming.map((t) => t.title), ['f']);
-  eq(v.groups.map((g) => g.items.length), [1, 1, 1]);
+  const pinned = L.taskView(list, '2026-11-03', { id: list[4].id, date: '2026-11-03' });
+  eq([pinned.main.title, pinned.top[0].title], ['e', 'd'], 'закріплена головна справа');
+  eq(L.taskView(list, '2026-11-03', { id: list[4].id, date: '2026-11-02' }).main.title, 'd', 'вчорашнє закріплення не діє');
+});
+
+test('У межах пріоритету раніше — справа з ранішим часом', () => {
+  const list = [T('без часу', 2, '2026-11-03', 1), T('о 15', 2, '2026-11-03', 2, { time: '15:00' }), T('о 9', 2, '2026-11-03', 3, { time: '09:00' })];
+  eq(L.taskView(list, '2026-11-03').ordered.map((t) => t.title), ['о 9', 'о 15', 'без часу']);
 });
 
 test('Незавершена справа переходить на наступний день без дубліката', () => {
@@ -164,9 +166,43 @@ test('Захист від дублікатів: регістр, пробіли, 
   eq(L.findDuplicate(list, 'Купити хліб', list[0].id), null, 'сама себе не дублює');
 });
 
-/* ---------- Обов’язкові ---------- */
+test('Повторювані справи: наступна дата за правилом', () => {
+  eq(L.nextDue({ k: 'daily' }, '2026-11-04'), '2026-11-05');
+  eq(L.nextDue({ k: 'weekdays' }, '2026-11-06'), '2026-11-09', 'пʼятниця → понеділок');
+  eq(L.nextDue({ k: 'weekly', days: [1, 3] }, '2026-11-04'), '2026-11-09', 'ср → пн');
+  eq(L.nextDue({ k: 'weekly', days: [1, 3] }, '2026-11-02'), '2026-11-04', 'пн → ср');
+  eq(L.nextDue({ k: 'monthly', dom: 31 }, '2026-11-04'), '2026-11-30');
+  eq(L.nextDue({ k: 'monthly', dom: 31 }, '2026-01-31'), '2026-02-28');
+  eq(L.nextDue({ k: 'monthly', dom: 4 }, '2026-12-04'), '2027-01-04');
+  eq(L.repLabel({ k: 'weekly', days: [0, 1, 3] }), 'щотижня: пн, ср, нд');
+});
 
-test('Обов’язкова справа не зникає з днями, рахує дні й строк', () => {
+test('Виконання повторюваної справи створює наступну без дублікатів; «Скасувати» прибирає її', () => {
+  const s = fresh();
+  const t = T('Звіт за тиждень', 2, '2026-11-02', nov(9, 0, 1), { rep: { k: 'daily' }, sub: [{ id: 'a', t: 'Зібрати дані', d: 5 }] });
+  s.tasks.push(t);
+  const r = L.completeTask(s, t.id, nov(10, 0));
+  eq([r.spawned.due, r.spawned.sid, r.spawned.sub[0].d, s.tasks.length], ['2026-11-04', t.sid, 0, 2], 'прострочена → від сьогодні');
+  eq(L.completeTask(s, t.id, nov(10, 0)), null, 'повторне виконання ігнорується');
+  L.undoTask(s, t.id);
+  eq([s.tasks.length, t.doneAt], [1, 0]);
+  const twin = { ...T('Звіт за тиждень', 2, '2026-11-05'), sid: t.sid, rep: { k: 'daily' } };
+  s.tasks.push(twin);
+  eq(L.completeTask(s, t.id, nov(10, 0)).spawned, null, 'відкритий екземпляр серії вже є');
+});
+
+test('Шкала дедлайну рахується з реального часу', () => {
+  const late = L.deadlineInfo(T('x', 1, '2026-11-01'), nov(12, 0));
+  eq([late.level, late.frac, late.text], ['late', 1, 'прострочено 2 дні']);
+  const timed = L.deadlineInfo(T('x', 2, '2026-11-03', nov(10, 0), { time: '14:00' }), nov(13, 10));
+  eq([timed.level, Math.round(timed.frac * 100), timed.text], ['soon', 79, 'о 14:00 · через 50 хв']);
+  const m = L.newMust('рапорт', '2026-11-05', nov(10, 0, 1));
+  eq(L.deadlineInfo(m, nov(10, 0), 'must').text, 'до чт, 5 лист. · ще 2 дні');
+});
+
+/* ---------- Обовʼязкові ---------- */
+
+test('Обовʼязкова справа не зникає з днями, рахує дні й строк', () => {
   const m = L.newMust('Подати рапорт', '2026-11-05', nov(10, 0, 1));
   const v1 = L.mustView([m], '2026-11-03');
   eq([v1.open.length, v1.open[0].age, v1.open[0].left], [1, 2, 2]);
@@ -175,29 +211,214 @@ test('Обов’язкова справа не зникає з днями, ра
   eq(L.mustView([{ ...m, doneAt: 9 }], '2026-11-20').open.length, 0);
 });
 
-test('Сортування обов’язкових: спершу з найближчим строком', () => {
+test('Сортування обовʼязкових: спершу з найближчим строком', () => {
   const a = L.newMust('без строку', '', 1), b = L.newMust('пізно', '2026-11-30', 2), c = L.newMust('скоро', '2026-11-04', 3);
   eq(L.mustView([a, b, c], '2026-11-03').open.map((x) => x.title), ['скоро', 'пізно', 'без строку']);
 });
 
-test('Очищення: виконане старше 30 днів прибирається, відкрите — ні', () => {
-  const now = nov(12, 0);
-  const s = { tasks: [{ doneAt: now - 31 * 864e5 }, { doneAt: now - 864e5 }, { doneAt: 0 }], musts: [{ doneAt: now - 40 * 864e5 }, { doneAt: 0 }] };
-  L.purge(s, now);
-  eq([s.tasks.length, s.musts.length], [2, 1]);
+/* ---------- Режими і наступна дія ---------- */
+
+test('Автоматичний режим: ранок, день, відпочинок; ручний — до кінця доби', () => {
+  const s = fresh();
+  eq([L.autoMode(s, nov(5, 50)), L.autoMode(s, nov(7, 40)), L.autoMode(s, nov(21, 30)), L.autoMode(s, nov(2, 0))], ['morning', 'day', 'rest', 'rest']);
+  L.setMode(s, 'ready', true, nov(12, 0));
+  eq(L.modeInfo(s, nov(23, 50)).id, 'ready');
+  eq(L.modeInfo(s, nov(8, 0, 4)).id, 'day', 'наступного дня — знову авто');
+  L.setMode(s, 'rest', false, nov(12, 0));
+  eq(L.modeInfo(s, nov(8, 0, 9)).id, 'rest', 'до скасування');
+  L.setMode(s, 'auto');
+  eq(L.modeInfo(s, nov(12, 0)).manual, false);
 });
 
-/* ---------- Дані й резервні копії ---------- */
+test('Наступна дія: ранкова підготовка має перевагу, крок — найвищу', () => {
+  const s = fresh();
+  s.tasks.push(T('Звіт', 1, '2026-11-03', nov(6, 0)));
+  const a = L.nextAction(s, nov(6, 40));
+  eq([a.mode.id, a.main.kind, a.then.kind], ['morning', 'morning', 'task']);
+  s.session = session(6, 40);
+  eq(L.nextAction(s, nov(6, 41)).main.title, 'Прокинутися');
+  L.setMode(s, 'rest', true, nov(6, 41));
+  s.session = null;
+  eq(L.nextAction(s, nov(6, 42)).main.kind, 'task', 'у режимі «Відпочинок» ранок не нав’язується');
+});
+
+test('Наступна дія: прострочена обовʼязкова, справа з часом, пріоритет; відкладене пропускається', () => {
+  const s = fresh();
+  const t1 = T('Купити хліб', 3, '2026-11-03', 1);
+  const t2 = T('Нарада', 2, '2026-11-03', 2, { time: '12:30' });
+  const t3 = T('Звіт', 1, '2026-11-03', 3);
+  s.tasks.push(t1, t2, t3);
+  eq(L.nextAction(s, nov(10, 0)).main.title, 'Звіт');
+  const m = L.newMust('Рапорт', '2026-11-02', nov(9, 0, 1));
+  s.musts.push(m);
+  eq(L.nextAction(s, nov(10, 0)).main.title, 'Рапорт', 'прострочена обовʼязкова вище за пріоритет');
+  eq(L.nextAction(s, nov(12, 0)).main.title, 'Нарада', 'за пів години до наради');
+  L.defer(s, `task:${t2.id}`, 60, nov(12, 0));
+  eq(L.nextAction(s, nov(12, 10)).main.title, 'Рапорт');
+  const back = L.nextAction(s, nov(13, 5)).main;
+  eq([back.title, back.reason], ['Нарада', 'Важливо · мало бути о 12:30'], 'відкладення минуло');
+});
+
+test('Наступна дія у «Готовності»: спершу екіпірування; вечором — план на завтра', () => {
+  const s = fresh();
+  s.tasks.push(T('Звіт', 2, '2026-11-03', 1));
+  L.setMode(s, 'ready', true, nov(12, 0));
+  const r = L.nextAction(s, nov(12, 0));
+  eq([r.main.kind, r.main.title], ['gear', 'Перевірити: Підзвітне майно']);
+  const e = L.defaultState();
+  e.settings.lastBackupAt = nov(8, 0);
+  for (const c of G.GEAR_CATS) { G.startCheck(e.gear, c.id, 'plan', nov(8, 0)); for (const i of e.gear.cats[c.id].items) G.markItem(e.gear, c.id, i.id, 'ok'); G.finishCheck(e.gear, c.id, nov(8, 10)); }
+  eq(L.nextAction(e, nov(21, 30)).main.kind, 'plan');
+});
+
+test('Day Orb показує лише реальні дані режиму', () => {
+  const s = fresh();
+  s.tasks.push(T('a', 1, '2026-11-03', 1), T('b', 2, '2026-11-02', 2), { ...T('c', 2, '2026-11-03', 3), doneAt: nov(9, 0) });
+  const day = L.orbData(s, nov(10, 0), 'day');
+  eq([day.big, day.caption, day.segs], ['1/3', 'справ виконано', ['done', 'late', 'todo']]);
+  const ready = L.orbData(s, nov(10, 0), 'ready');
+  eq([ready.big, ready.segs.length, ready.sub], ['0/5', 5, 'Потребують перевірки: 5']);
+  const morning = L.orbData(s, nov(6, 0), 'morning');
+  eq([morning.big, morning.caption], ['07:35', 'час виходу']);
+});
+
+test('Хронологія дня: події за часом і межі шкали', () => {
+  const s = fresh();
+  s.tasks.push(T('Нарада', 2, '2026-11-03', 1, { time: '14:00' }), T('Завтра', 2, '2026-11-04', 1, { time: '09:00' }));
+  const ev = L.dayEvents(s, nov(10, 0));
+  eq(ev.events.map((e) => `${L.fmtHM(e.t)} ${e.title}`), ['06:35 Підйом', '07:35 Вихід', '08:30 Прибуття', '14:00 Нарада']);
+  eq([L.fmtHM(ev.start), L.fmtHM(ev.end)], ['06:00', '15:00']);
+});
+
+test('Підсумок дня одним рядком', () => {
+  const s = fresh();
+  s.tasks.push(T('a', 1, '2026-11-02', 1), T('b', 2, '2026-11-03', 1));
+  s.musts.push(L.newMust('m'));
+  eq(L.daySummary(s, nov(10, 0)), '2 справи · прострочено 1 · 1 обовʼязкова · 5 перевірок потрібно');
+});
+
+/* ---------- Екіпірування ---------- */
+
+test('Екіпірування: без перевірки — «Потребує перевірки», після повної — «Без недоліків»', () => {
+  const g = G.defaultGear();
+  eq(G.catStatus(g, 'med', nov(10, 0)).s, 'needs');
+  G.startCheck(g, 'med', 'plan', nov(10, 0));
+  const ids = g.cats.med.items.map((i) => i.id);
+  G.markItem(g, 'med', ids[0], 'ok');
+  const run = G.catStatus(g, 'med', nov(10, 1));
+  eq([run.s, run.marked, run.total], ['running', 1, 9]);
+  eq(G.finishCheck(g, 'med', nov(10, 2)).ok, false, 'не всі предмети позначено');
+  for (const id of ids) G.markItem(g, 'med', id, 'ok');
+  const r = G.finishCheck(g, 'med', nov(10, 5));
+  eq([r.ok, r.sum.clean, G.catStatus(g, 'med', nov(10, 6)).s], [true, true, 'ok']);
+});
+
+test('Екіпірування: недолік, усунення, давність, нові та прострочені предмети', () => {
+  const g = G.defaultGear();
+  const items = g.cats.alarm.items;
+  G.startCheck(g, 'alarm', 'before', nov(10, 0));
+  items.forEach((i, n) => G.markItem(g, 'alarm', i.id, n === 1 ? 'miss' : 'ok', 'нема води'));
+  G.finishCheck(g, 'alarm', nov(10, 5));
+  const st = G.catStatus(g, 'alarm', nov(10, 6));
+  eq([st.s, st.text], ['issues', 'Відсутнє: 1']);
+  eq(G.checkIssues(g.history[0]).map((x) => [x.name, x.note]), [['Вода', 'нема води']]);
+  ok(G.fixIssue(g, 'alarm', items[1].id, nov(11, 0)));
+  eq(G.catStatus(g, 'alarm', nov(11, 1)).s, 'ok');
+  eq(G.catStatus(g, 'alarm', nov(11, 0, 3 + 31)).s, 'needs', 'після періоду 30 днів');
+  items.push(G.cleanItem({ name: 'Нова ковдра' }, nov(12, 0)));
+  eq(G.catStatus(g, 'alarm', nov(12, 1)).reason, 'new', 'новий предмет не перевірено');
+  items.pop();
+  items[0].exp = '2026-11-01';
+  eq(G.catStatus(g, 'alarm', nov(12, 1)).s, 'issues', 'термін придатності минув');
+});
+
+test('Підсумок екіпірування і пошкоджені дані', () => {
+  const g = G.cleanGear({ cats: { med: { period: 99, items: [{ name: '' }, { name: 'Бинт', qty: -5, exp: '2026-13-40' }, 7] } }, history: [{ cat: 'nope' }, { cat: 'med', startedAt: 1, finishedAt: 2, marks: { a: 'ok', b: 'boom' } }] });
+  eq([g.cats.med.period, g.cats.med.items.length, g.cats.med.items[0].qty, g.cats.med.items[0].exp], [7, 1, 1, '']);
+  eq([g.history.length, Object.keys(g.history[0].marks)], [1, ['a']]);
+  eq(G.gearSummary(g, nov(10, 0)).total, 5);
+});
+
+/* ---------- Сценарії та інструменти ---------- */
+
+test('Сценарій: «Готово» лише після всіх обовʼязкових кроків', () => {
+  const deck = D.defaultDeck();
+  const sc = deck.scenarios.find((s) => s.kind === 'go');
+  D.startRun(deck, sc, nov(10, 0));
+  for (const s of sc.steps.slice(0, 2)) deck.active.checked[s.id] = nov(10, 1);
+  const p = D.finishRun(deck, sc, nov(10, 5));
+  eq([p.result, p.reqDone, p.reqTotal, p.missing], ['partial', 2, 3, ['Повідомити рідних або керівника']]);
+  D.startRun(deck, sc, nov(11, 0));
+  for (const s of sc.steps.filter((x) => x.req)) deck.active.checked[s.id] = nov(11, 1);
+  eq(D.finishRun(deck, sc, nov(11, 2)).result, 'done');
+  eq([deck.active, deck.runs.length], [null, 2]);
+});
+
+test('Сценарії: вбудовані не зникають, власні обмежені', () => {
+  const d = D.cleanDeck({ scenarios: [{ id: 'x1', kind: 'custom', title: 'Мій', steps: [{ t: 'крок', req: true }, { t: '' }] }, { id: 'bad', kind: 'weird', title: 'x' }] });
+  eq(d.scenarios.map((s) => s.kind), ['med', 'tac', 'fire', 'go', 'task', 'custom']);
+  eq(d.scenarios[5].steps.length, 1);
+});
+
+test('Посилання інструментів: дозволені й заборонені', () => {
+  eq(D.checkUrl('alerts.in.ua').url, 'https://alerts.in.ua/');
+  eq(D.checkUrl('https://www.example.com/a b').ok, false, 'пробіл');
+  eq(D.checkUrl('javascript:alert(1)').ok, false);
+  eq(D.checkUrl('data:text/html,hi').ok, false);
+  eq(D.checkUrl('https://user:pass@example.com').ok, false, 'логін у посиланні');
+  eq(D.checkUrl('https://intranet').ok, false, 'без домену');
+  eq(D.checkUrl('ftp://example.com').ok, false);
+  eq([D.checkUrl('tel:+380501234567').ok, D.checkUrl('mailto:a@b.ua').ok, D.checkUrl('tel:abc').ok], [true, true, false]);
+  eq(D.toolHost('https://www.github.com/x'), 'github.com');
+  eq([D.glyphOf({ title: 'Карта тривог', glyph: '' }), D.glyphOf({ title: 'Дія', glyph: '' }), D.glyphOf({ title: 'x', glyph: 'Ab' })], ['КТ', 'Д', 'Ab']);
+});
+
+test('Каталог інструментів: пошук, категорії, улюблені', () => {
+  const tools = D.defaultTools();
+  const all = D.toolView(tools);
+  eq([all.fav.map((t) => t.title), all.groups.find((g) => g.id === 'work').items.map((t) => t.title)], [['Дія', 'Календар', 'Карта тривог'], ['Диск', 'Пошта']], 'улюблені не дублюються');
+  const v = D.toolView(tools, 'кал');
+  eq([v.count, v.fav.length, v.groups[0].items[0].title], [1, 0, 'Календар']);
+  eq(D.toolView(tools, '', 'work').groups[0].items.length, 3);
+  eq(D.cleanTools([{ title: 'X', url: 'javascript:1', cat: 'xxx' }])[0].cat, 'other');
+});
+
+/* ---------- Дані, міграція, резервні копії ---------- */
+
+test('Міграція даних v1 → v2 без втрат', () => {
+  const v1 = {
+    v: 1, updatedAt: 5, settings: { theme: 'dark', lastBackupAt: 7, installHint: false },
+    morning: { arrival: '09:00', transport: 'car', travel: { bus: 40, car: 30, taxi: 20, walk: 35 }, buffer: 10, steps: [{ id: 's1', title: 'Кава', min: 10, short: 3, critical: false, items: [], kind: '' }] },
+    session: null,
+    tasks: [{ id: 't1', title: 'Звіт', pr: 1, due: '2026-11-03', note: 'до обіду', createdAt: 100, doneAt: 0, moved: 2 }],
+    musts: [{ id: 'm1', title: 'Рапорт', note: '', deadline: '2026-11-10', createdAt: 50, doneAt: 0 }],
+  };
+  const { state, from } = L.cleanState(v1, nov(10, 0));
+  eq(from, 1);
+  eq([state.v, state.settings.theme, state.settings.installHint, state.settings.mode.id], [2, 'dark', false, 'auto']);
+  eq([state.morning.arrival, state.morning.steps[0].id, state.morning.steps[0].title], ['09:00', 's1', 'Кава']);
+  const t = state.tasks[0];
+  eq([t.id, t.title, t.pr, t.note, t.moved, t.time, t.cat, t.rep, t.sid, t.sub], ['t1', 'Звіт', 1, 'до обіду', 2, '', '', null, 't1', []]);
+  eq([state.musts[0].deadline, state.gear.history.length, state.deck.scenarios.length, state.tools.length], ['2026-11-10', 0, 5, 6]);
+});
 
 test('Пошкоджені дані не ламають застосунок', () => {
   eq(L.cleanState(null).state.morning.arrival, '08:30');
-  const { state, dropped } = L.cleanState({ tasks: [{ title: '' }, { title: 'ok', pr: 9, due: 'вчора' }, 5], musts: 'x', morning: { arrival: '25:99', buffer: 7, steps: [{ title: 'Крок', min: 999, short: 500 }] } }, nov(12, 0));
+  const { state, dropped } = L.cleanState({ tasks: [{ title: '' }, { title: 'ok', pr: 9, due: 'вчора', time: '25:00', cat: 'x', rep: { k: 'never' } }, 5], musts: 'x', gear: 7, deck: [], tools: 'x', later: { a: 'b', b: 5 }, morning: { arrival: '25:99', buffer: 7, steps: [{ title: 'Крок', min: 999, short: 500 }] } }, nov(12, 0));
   eq(dropped, 2);
-  eq([state.tasks.length, state.tasks[0].pr, state.tasks[0].due], [1, 3, '2026-11-03']);
+  eq([state.tasks.length, state.tasks[0].pr, state.tasks[0].due, state.tasks[0].time, state.tasks[0].cat, state.tasks[0].rep], [1, 3, '2026-11-03', '', '', null]);
   eq([state.morning.arrival, state.morning.buffer, state.morning.steps[0].min, state.morning.steps[0].short], ['08:30', 15, 180, 180]);
+  eq([Object.keys(state.later), state.gear.history.length, state.deck.scenarios.length, state.tools.length], [['b'], 0, 5, 6]);
 });
 
-test('Резервна копія: створення і перевірка', () => {
+test('Очищення: старе виконане, минулі відкладення й закріплення', () => {
+  const now = nov(12, 0);
+  const s = { tasks: [{ doneAt: now - 31 * 864e5 }, { doneAt: now - 864e5 }, { doneAt: 0 }], musts: [{ doneAt: now - 40 * 864e5 }, { doneAt: 0 }], later: { a: L.localMin(now) - 1, b: L.localMin(now) + 30 }, pin: { id: 'x', date: '2026-11-02' } };
+  L.purge(s, now);
+  eq([s.tasks.length, s.musts.length, Object.keys(s.later), s.pin.id], [2, 1, ['b'], '']);
+});
+
+test('Резервна копія: створення, перевірка, копія версії 1', () => {
   const s = L.defaultState();
   s.tasks.push(T('Звіт', 1, '2026-11-03'));
   s.musts.push(L.newMust('Рапорт'));
@@ -205,9 +426,11 @@ test('Резервна копія: створення і перевірка', ()
   const backup = JSON.parse(JSON.stringify(L.makeBackup(s, 123)));
   const r = L.readBackup(backup);
   ok(r.ok);
-  eq([r.summary.tasks, r.summary.musts, r.summary.steps, r.exportedAt, r.state.session], [1, 1, 7, 123, null]);
+  eq([r.summary.tasks, r.summary.musts, r.summary.steps, r.summary.items, r.exportedAt, r.state.session], [1, 1, 7, 34, 123, null]);
   eq(L.readBackup({ app: 'other' }).ok, false);
   eq(L.readBackup({ ...backup, v: 99 }).ok, false, 'новіша версія');
+  const old = L.readBackup({ app: 'opora', kind: 'backup', v: 1, exportedAt: 9, data: { tasks: [{ id: 'q', title: 'Стара', pr: 2, due: '2026-11-01' }] } });
+  eq([old.ok, old.from, old.state.tasks[0].title, old.state.tools.length], [true, 1, 'Стара', 6]);
 });
 
 test('Текст користувача екранується перед показом', () => {

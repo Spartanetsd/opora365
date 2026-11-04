@@ -1,8 +1,8 @@
 {
-  "name": "opora",
-  "version": "1.0.0",
+  "name": "opora365",
+  "version": "2.0.0",
   "private": true,
-  "description": "ОПОРА · Мій день — PWA для iPhone: ранковий план, справи за пріоритетами, обов’язкові справи",
+  "description": "ОПОРА 365 · Obsidian Flow — PWA для iPhone: наступна дія, ранок, справи за пріоритетами, екіпірування, швидкі сценарії, інструменти",
   "type": "module",
   "scripts": {
     "test": "node tests.js",

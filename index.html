@@ -1,33 +1,37 @@
 <!doctype html>
-<html lang="uk">
+<html lang="uk" data-theme="dark" data-mode="day">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
-  <title>ОПОРА · Мій день</title>
-  <meta name="description" content="Ранковий план із часом виходу, справи за пріоритетами та обов’язкові справи, що не зникають до виконання. Працює офлайн.">
-  <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-  <meta name="color-scheme" content="light dark">
+  <title>ОПОРА 365</title>
+  <meta name="description" content="Особиста операційна система дня: наступна дія, ранок із часом виходу, справи за пріоритетами, екіпірування, швидкі сценарії та інструменти. Працює офлайн.">
+  <meta name="theme-color" content="#080D16">
+  <meta name="color-scheme" content="dark light">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="ОПОРА">
+  <meta name="apple-mobile-web-app-title" content="ОПОРА 365">
   <meta name="format-detection" content="telephone=no">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="stylesheet" href="styles.css">
+  <script src="theme.js"></script>
   <script type="module" src="app.js"></script>
 </head>
 <body>
-  <main id="view" class="view" tabindex="-1"></main>
+  <div class="ambient" aria-hidden="true"></div>
 
-  <header class="topbar">
+  <main id="view" class="view" tabindex="-1">
+    <div class="page boot" aria-busy="true"><p class="muted center" style="padding-top:30vh">ОПОРА 365 запускається…</p></div>
+  </main>
+
+  <header class="topbar" id="topbar">
     <div class="topbar-inner">
-      <span class="tb-side"></span>
-      <span class="tb-title" id="tbTitle" aria-hidden="true">Мій день</span>
+      <span class="tb-side" id="tbLeft"></span>
+      <span class="tb-title" id="tbTitle" aria-hidden="true"></span>
       <span class="tb-side tb-actions" id="tbActions"></span>
     </div>
   </header>
@@ -37,8 +41,8 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <dialog id="sheet" class="sheet" aria-label="Панель"></dialog>
-  <dialog id="session" class="screen" aria-label="Ранкова підготовка"></dialog>
+  <dialog id="screen" class="screen" aria-label="Екран"></dialog>
 
-  <noscript><p style="padding:40px 20px;font:17px system-ui">Для роботи ОПОРА потрібен JavaScript.</p></noscript>
+  <noscript><p style="padding:40px 20px;font:17px system-ui;color:#F4F7FB;background:#080D16">Для роботи ОПОРА 365 потрібен JavaScript.</p></noscript>
 </body>
 </html>

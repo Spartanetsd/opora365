@@ -1,45 +1,40 @@
-// ОПОРА — дрібні помічники інтерфейсу: екранування, іконки, повідомлення, нижні панелі.
+// ОПОРА 365 — помічники інтерфейсу: екранування, повідомлення, нижні панелі, повноекранні режими,
+// тактильний відгук. Під час імпорту модуль не звертається до DOM (його використовують і тести в Node).
+import { icon } from './icons.js';
 
+export { icon };
 export const $ = (sel, root = document) => root.querySelector(sel);
+export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
 
-// Лінійні іконки 24×24 (власний набір у стилі Lucide, без зовнішніх файлів).
-const PATHS = {
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
-  sunrise: '<path d="M12 2v8M4.93 10.93l1.41 1.41M2 18h2M20 18h2M19.07 10.93l-1.41 1.41M22 22H2M8 6l4-4 4 4M16 18a4 4 0 0 0-8 0"/>',
-  list: '<path d="M3 17l2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
-  pin: '<path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1V10.76"/>',
-  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2"/><circle cx="12" cy="12" r="3"/>',
-  plus: '<path d="M5 12h14M12 5v14"/>',
-  check: '<path d="M20 6L9 17l-5-5"/>',
-  chev: '<path d="M9 18l6-6-6-6"/>',
-  up: '<path d="M18 15l-6-6-6 6"/>',
-  down: '<path d="M6 9l6 6 6-6"/>',
-  x: '<path d="M18 6L6 18M6 6l12 12"/>',
-  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1V13"/>',
-  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
-  alert: '<path d="M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/>',
-  trash: '<path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
-  arrow: '<path d="M5 12h14M12 5l7 7-7 7"/>',
-  skip: '<path d="M6 17l5-5-5-5M13 17l5-5-5-5"/>',
-  reset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/>',
-  share: '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/>',
-  import: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
-  filecheck: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6M14 2v6h6M9 15l2 2 4-4"/>',
-  calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
-  bus: '<path d="M8 6v6M15 6v6M2 12h19.6M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3M9 18h5"/><circle cx="7" cy="18" r="2"/><circle cx="16" cy="18" r="2"/>',
-  car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2M9 17h6"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>',
-  taxi: '<path d="M10 2h4M21 8l-2 2-1.5-3.7A2 2 0 0 0 15.65 5H8.4a2 2 0 0 0-1.9 1.26L5 10 3 8M7 14h.01M17 14h.01M5 18v2M19 18v2"/><rect width="18" height="8" x="3" y="10" rx="2"/>',
-  walk: '<circle cx="12" cy="5" r="1"/><path d="M9 20l3-6 3 6M6 8l6 2 6-2M12 10v4"/>',
-  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
-  phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
-};
+export const reduceMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${PATHS[name] || ''}</svg>`;
+/* ---------- Тактильний відгук ---------- */
+// Android: Vibration API. iPhone: офіційного API для вебзастосунків немає; iOS 18+ дає системний
+// відгук під час перемикання <input type="checkbox" switch>, тому використовуємо прихований перемикач.
+// Якщо платформа цього не підтримує — просто нічого не відбувається.
+let hapticOn = true;
+let hapticEl = null;
+export function setHaptics(on) { hapticOn = !!on; }
+export function haptic() {
+  if (!hapticOn) return;
+  try {
+    if (typeof navigator.vibrate === 'function') { navigator.vibrate(12); return; }
+    if (!hapticEl) {
+      const label = document.createElement('label');
+      label.setAttribute('aria-hidden', 'true');
+      label.className = 'haptic';
+      label.innerHTML = '<input type="checkbox" switch tabindex="-1">';
+      document.body.append(label);
+      hapticEl = label;
+    }
+    hapticEl.click();
+  } catch { /* платформа не підтримує */ }
+}
 
-/* ---------- Коротке повідомлення внизу екрана ---------- */
+/* ---------- Коротке повідомлення ---------- */
 
 let toastTimer = 0;
 export function toast(message, action = null, ms = 0) {
@@ -47,34 +42,33 @@ export function toast(message, action = null, ms = 0) {
   if (!el) return;
   el.innerHTML = `<span class="toast-text">${esc(message)}</span>${action ? `<button type="button" class="toast-btn">${esc(action.label)}</button>` : ''}`;
   const hide = () => el.classList.remove('show');
-  if (action) {
-    el.querySelector('.toast-btn').addEventListener('click', () => { hide(); action.run(); }, { once: true });
-  }
+  if (action) el.querySelector('.toast-btn').addEventListener('click', () => { hide(); action.run(); }, { once: true });
+  el.classList.remove('show');
+  void el.offsetWidth;
   el.classList.add('show');
   clearTimeout(toastTimer);
   if (ms !== Infinity) toastTimer = setTimeout(hide, ms || (action ? 5000 : 2600));
 }
 
-/* ---------- Нижня панель (sheet) ---------- */
-
-const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* ---------- Нижня панель (BottomSheet) ---------- */
 
 function syncModalClass() {
-  const any = [...document.querySelectorAll('dialog')].some((d) => d.open);
+  const any = $$('dialog').some((d) => d.open);
   document.documentElement.classList.toggle('modal-open', any);
 }
 
-export function openSheet(html, { onClose = null, wide = false } = {}) {
+export function openSheet(html, { onClose = null, label = 'Панель' } = {}) {
   const d = $('#sheet');
   d.classList.remove('closing');
-  d.classList.toggle('wide', wide);
-  d.innerHTML = `<div class="sheet-body">${html}</div>`;
+  d.style.transform = '';
+  d.setAttribute('aria-label', label);
+  d.innerHTML = `<div class="sheet-grab" aria-hidden="true"><span></span></div><div class="sheet-body" tabindex="-1">${html}</div>`;
   d.onCloseOnce = onClose;
   if (!d.open) d.showModal();
   syncModalClass();
   const f = d.querySelector('[data-focus]');
   if (f) f.focus();
-  else d.querySelector('.sheet-body').focus?.();
+  else d.querySelector('.sheet-body').focus({ preventScroll: true });
   return d;
 }
 
@@ -83,31 +77,45 @@ export function closeSheet() {
   if (!d.open) return;
   if (reduceMotion()) { d.close(); return; }
   d.classList.add('closing');
-  setTimeout(() => { d.classList.remove('closing'); if (d.open) d.close(); }, 170);
+  setTimeout(() => { d.classList.remove('closing'); d.style.transform = ''; if (d.open) d.close(); }, 200);
 }
 
-export function initDialogs() {
-  for (const d of document.querySelectorAll('dialog')) {
-    d.addEventListener('close', () => {
-      syncModalClass();
-      const fn = d.onCloseOnce;
-      d.onCloseOnce = null;
-      if (fn) fn();
-    });
-    // натискання на затемнений фон закриває панель
-    d.addEventListener('click', (e) => { if (e.target === d && d.id === 'sheet') closeSheet(); });
-  }
+// Потягнути панель донизу, щоб закрити.
+function enableDrag(d) {
+  let y0 = 0, dy = 0, t0 = 0, active = false;
+  d.addEventListener('touchstart', (e) => {
+    const body = d.querySelector('.sheet-body');
+    const onGrab = e.target.closest('.sheet-grab, .sheet-head');
+    if (!onGrab && body && body.scrollTop > 0) return;
+    if (e.target.closest('input, textarea, select, .seg, .stepper')) return;
+    active = true; y0 = e.touches[0].clientY; dy = 0; t0 = Date.now();
+  }, { passive: true });
+  d.addEventListener('touchmove', (e) => {
+    if (!active) return;
+    dy = Math.max(0, e.touches[0].clientY - y0);
+    if (dy > 4) { d.classList.add('dragging'); d.style.transform = `translateY(${dy}px)`; }
+  }, { passive: true });
+  const end = () => {
+    if (!active) return;
+    active = false;
+    d.classList.remove('dragging');
+    const fast = dy > 40 && dy / Math.max(1, Date.now() - t0) > 0.6;
+    if (dy > 110 || fast) closeSheet();
+    else d.style.transform = '';
+  };
+  d.addEventListener('touchend', end);
+  d.addEventListener('touchcancel', end);
 }
 
-export function sheetHead(title, { done = 'Готово', cancel = '' } = {}) {
+export function sheetHead(title, { done = 'Готово', cancel = '', submit = false } = {}) {
   return `<div class="sheet-head">
     ${cancel ? `<button type="button" class="link" data-act="sheetClose">${esc(cancel)}</button>` : '<span></span>'}
     <h2 class="sheet-title">${esc(title)}</h2>
-    ${done ? `<button type="button" class="link strong" data-act="sheetClose">${esc(done)}</button>` : '<span></span>'}
+    ${done ? `<button type="${submit ? 'submit' : 'button'}" class="link strong"${submit ? '' : ' data-act="sheetClose"'}>${esc(done)}</button>` : '<span></span>'}
   </div>`;
 }
 
-export function confirmSheet({ title, text = '', ok = 'Так', danger = false }) {
+export function confirmSheet({ title, text = '', ok = 'Так', danger = false, cancel = 'Скасувати' }) {
   return new Promise((resolve) => {
     let answered = false;
     const d = openSheet(`
@@ -115,22 +123,122 @@ export function confirmSheet({ title, text = '', ok = 'Так', danger = false }
         <h2 class="sheet-title">${esc(title)}</h2>
         ${text ? `<p class="sheet-text">${esc(text)}</p>` : ''}
         <div class="stack">
-          <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'} btn-block" data-ok>${esc(ok)}</button>
-          <button type="button" class="btn btn-plain btn-block" data-no>Скасувати</button>
+          <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'} btn-block btn-lg" data-ok>${esc(ok)}</button>
+          <button type="button" class="btn btn-quiet btn-block" data-no>${esc(cancel)}</button>
         </div>
-      </div>`, { onClose: () => { if (!answered) resolve(false); } });
+      </div>`, { onClose: () => { if (!answered) resolve(false); }, label: title });
     d.querySelector('[data-ok]').addEventListener('click', () => { answered = true; resolve(true); closeSheet(); });
     d.querySelector('[data-no]').addEventListener('click', () => closeSheet());
   });
 }
 
-// Сегментований перемикач.
+// Вибір одного варіанта: [{ id, label, icon, hint, danger }]
+export function choiceSheet({ title, text = '', options }) {
+  return new Promise((resolve) => {
+    let answered = false;
+    const d = openSheet(`
+      <div class="choice">
+        <h2 class="sheet-title">${esc(title)}</h2>
+        ${text ? `<p class="sheet-text">${esc(text)}</p>` : ''}
+        <div class="list choice-list">${options.map((o) => `
+          <button type="button" class="row row-btn${o.danger ? ' danger' : ''}" data-choice="${esc(o.id)}">
+            ${o.icon ? `<span class="row-ic">${icon(o.icon)}</span>` : ''}
+            <span class="row-main"><span class="row-title">${esc(o.label)}</span>${o.hint ? `<span class="row-meta">${esc(o.hint)}</span>` : ''}</span>
+          </button>`).join('')}</div>
+        <button type="button" class="btn btn-quiet btn-block" data-no>Скасувати</button>
+      </div>`, { onClose: () => { if (!answered) resolve(null); }, label: title });
+    for (const b of d.querySelectorAll('[data-choice]')) {
+      b.addEventListener('click', () => { answered = true; resolve(b.dataset.choice); closeSheet(); });
+    }
+    d.querySelector('[data-no]').addEventListener('click', () => closeSheet());
+  });
+}
+
+/* ---------- Повноекранний режим (Фокус, перевірка, сценарій) ---------- */
+
+const AMBIENT = '<div class="ambient" aria-hidden="true"></div>';
+export function screenOpen() { return $('#screen').open; }
+
+// from — елемент, з якого «виростає» екран (плитка, кнопка); анімація лише clip-path і opacity.
+export function openScreen(html, { onClose = null, label = 'Екран', from = null, cls = '' } = {}) {
+  const d = $('#screen');
+  const wasOpen = d.open;
+  d.className = `screen ${cls}`.trim();
+  d.setAttribute('aria-label', label);
+  d.innerHTML = AMBIENT + html;
+  d.onCloseOnce = onClose;
+  if (!wasOpen) {
+    d.showModal();
+    syncModalClass();
+    if (from && !reduceMotion() && d.animate) {
+      const r = from.getBoundingClientRect();
+      const W = window.innerWidth, H = window.innerHeight;
+      const rad = parseFloat(getComputedStyle(from).borderTopLeftRadius) || 24;
+      const start = `inset(${r.top}px ${W - r.right}px ${H - r.bottom}px ${r.left}px round ${rad}px)`;
+      d.animate([{ clipPath: start, opacity: 0.6 }, { clipPath: 'inset(0px 0px 0px 0px round 0px)', opacity: 1 }], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      const inner = d.querySelector('.scr');
+      inner?.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 260, delay: 60, easing: 'ease-out', fill: 'backwards' });
+    } else if (!reduceMotion()) {
+      d.classList.add('rise');
+      setTimeout(() => d.classList.remove('rise'), 320);
+    }
+    d.querySelector('[data-focus]')?.focus();
+  }
+  return d;
+}
+
+export function updateScreen(html) {
+  const d = $('#screen');
+  if (!d.open) return;
+  const sc = d.querySelector('.scr');
+  const top = sc ? sc.scrollTop : 0;
+  const ae = document.activeElement;
+  const keep = ae && d.contains(ae) && ae.id ? ae.id : '';
+  d.innerHTML = AMBIENT + html;
+  const sc2 = d.querySelector('.scr');
+  if (sc2) sc2.scrollTop = top;
+  if (keep) document.getElementById(keep)?.focus({ preventScroll: true });
+}
+
+export function closeScreen() {
+  const d = $('#screen');
+  if (!d.open) return;
+  if (reduceMotion() || !d.animate) { d.close(); return; }
+  const a = d.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.98)' }], { duration: 180, easing: 'ease-in' });
+  a.onfinish = () => { if (d.open) d.close(); };
+}
+
+export function initDialogs() {
+  for (const d of $$('dialog')) {
+    d.addEventListener('close', () => {
+      syncModalClass();
+      const fn = d.onCloseOnce;
+      d.onCloseOnce = null;
+      if (fn) fn();
+    });
+    if (d.id === 'sheet') {
+      d.addEventListener('click', (e) => { if (e.target === d) closeSheet(); });
+      enableDrag(d);
+    }
+  }
+}
+
+/* ---------- Дрібні елементи керування ---------- */
+
 export function seg(name, options, value, act, field = '') {
   return `<div class="seg" role="radiogroup" aria-label="${esc(name)}"${field ? ` data-field="${field}"` : ''}>${options.map((o) => `
     <button type="button" role="radio" aria-checked="${String(o.id) === String(value)}" data-act="${act}" data-v="${esc(o.id)}">${o.icon ? icon(o.icon) : ''}<span>${esc(o.name)}</span></button>`).join('')}</div>`;
 }
 
-// Відмітка-кружечок для справ і кроків.
-export function checkBtn({ act, id, on = false, tone = '', label = '' }) {
-  return `<button type="button" class="check${on ? ' on' : ''}" data-tone="${tone}" role="checkbox" aria-checked="${on}" aria-label="${esc(label)}" data-act="${act}" data-id="${esc(id)}">${icon('check')}</button>`;
+export function checkBtn({ act, id, on = false, tone = '', label = '', extra = '' }) {
+  return `<button type="button" class="check${on ? ' on' : ''}" data-tone="${tone}" role="checkbox" aria-checked="${on}" aria-label="${esc(label)}" data-act="${act}" data-id="${esc(id)}"${extra}>${icon('check')}</button>`;
+}
+
+export function stepper(name, value, lo, hi, label, step = 1, unit = 'хв') {
+  return `<div class="stepper">
+    <button type="button" class="st-btn" data-act="numStep" data-d="-${step}" aria-label="Менше">−</button>
+    <input class="st-input" type="number" inputmode="numeric" name="${name}" value="${value}" min="${lo}" max="${hi}" aria-label="${esc(label)}">
+    ${unit ? `<span class="st-unit">${unit}</span>` : ''}
+    <button type="button" class="st-btn" data-act="numStep" data-d="${step}" aria-label="Більше">+</button>
+  </div>`;
 }
