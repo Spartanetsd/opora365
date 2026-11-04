@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>ОПОРА · Мій день</title>
+  <meta name="description" content="Ранковий план із часом виходу, справи за пріоритетами та обов’язкові справи, що не зникають до виконання. Працює офлайн.">
+  <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ОПОРА">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main id="view" class="view" tabindex="-1"></main>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <span class="tb-side"></span>
+      <span class="tb-title" id="tbTitle" aria-hidden="true">Мій день</span>
+      <span class="tb-side tb-actions" id="tbActions"></span>
+    </div>
+  </header>
+
+  <nav class="tabbar" id="tabbar" aria-label="Розділи"></nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="sheet" class="sheet" aria-label="Панель"></dialog>
+  <dialog id="session" class="screen" aria-label="Ранкова підготовка"></dialog>
+
+  <noscript><p style="padding:40px 20px;font:17px system-ui">Для роботи ОПОРА потрібен JavaScript.</p></noscript>
+</body>
+</html>

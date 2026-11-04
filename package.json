@@ -1,0 +1,11 @@
+{
+  "name": "opora",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ОПОРА · Мій день — PWA для iPhone: ранковий план, справи за пріоритетами, обов’язкові справи",
+  "type": "module",
+  "scripts": {
+    "test": "node tests.js",
+    "start": "python3 -m http.server 8080"
+  }
+}

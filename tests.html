@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>ОПОРА · тести</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, -apple-system, sans-serif; }
+    body { margin: 0; padding: calc(env(safe-area-inset-top) + 20px) 16px 40px; background: Canvas; color: CanvasText; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    p { margin: 0 0 16px; opacity: .75; }
+    ol { padding-left: 1.4em; line-height: 1.45; }
+    li { margin: 6px 0; }
+    .ok::marker { color: #12925f; }
+    .bad { color: #d70015; }
+    .sum { font-weight: 700; font-size: 1.1rem; }
+    a { color: #12925f; }
+  </style>
+</head>
+<body>
+  <h1>Тести логіки ОПОРА</h1>
+  <p>Перевіряють розрахунок часу виходу, пріоритети, перенесення справ і резервні копії саме в цьому браузері.</p>
+  <p class="sum" id="sum">Виконую…</p>
+  <ol id="list"></ol>
+  <p><a href="./">← До застосунку</a></p>
+  <script type="module">
+    import { run } from './tests.js';
+    const results = run();
+    const failed = results.filter((r) => !r.ok).length;
+    document.getElementById('sum').textContent = failed ? `Помилок: ${failed} з ${results.length}` : `Усі ${results.length} тестів пройдено ✓`;
+    document.getElementById('sum').className = failed ? 'sum bad' : 'sum';
+    document.getElementById('list').innerHTML = results.map((r) => `<li class="${r.ok ? 'ok' : 'bad'}">${r.name.replace(/</g, '&lt;')}${r.ok ? '' : ` — ${r.error.replace(/</g, '&lt;')}`}</li>`).join('');
+  </script>
+</body>
+</html>
