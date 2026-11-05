@@ -251,38 +251,50 @@ const backdrop = () => ({ src: 'morning-flow.webp', kind: 'header', pos: '50% 46
 
 /* ---------- Маршрут і шаблон ---------- */
 
+function routeFoot(m) {
+  const p = L.computePlan(m);
+  return `${esc(L.endLabel(m))} о <b>${L.fmtHM(p.departure)}</b>, підйом о <b>${L.fmtHM(p.wake)}</b>. Запас — у хвилинах. Тривалість дороги запамʼятовується окремо для кожного виду транспорту.`;
+}
+
 function routeHtml(app) {
   const m = tplOf(app);
-  const p = L.computePlan(m);
   const home = L.homeDay(m);
-  const end = L.endLabel(m);
   return `${sheetHead(m.name)}
     ${m.kind === 'custom' ? `<div class="list"><label class="row field"><input class="input-plain" id="tplName" value="${esc(m.name)}" maxlength="40" placeholder="Назва шаблону" data-change="tplName" aria-label="Назва шаблону"></label></div>` : ''}
     <div class="list">
-      <label class="row field-row"><span class="row-label">${home ? 'Початок справ' : 'Бажаний час прибуття'}</span><input id="arrivalInput" class="time-input" type="time" value="${esc(m.arrival)}" data-change="mArrival" required></label>
+      <label class="row field-row"><span class="row-label" id="arrivalLabel">${home ? 'Початок справ' : 'Бажаний час прибуття'}</span><input id="arrivalInput" class="time-input" type="time" value="${esc(m.arrival)}" data-change="mArrival" required></label>
       <div class="row field-col"><span class="row-label">Дорога</span>${seg('Транспорт', L.TRANSPORT.map((t) => ({ id: t.id, name: t.id === 'none' ? 'Вдома' : t.name, icon: t.icon })), m.transport, 'mTransport')}</div>
-      ${home ? '' : `<div class="row field-row"><span class="row-label">Тривалість дороги</span>
-        <div class="stepper"><button type="button" class="st-btn" data-act="travelStep" data-d="-5" aria-label="Мінус 5 хвилин">−</button><input class="st-input" id="travelInput" type="number" inputmode="numeric" min="0" max="600" value="${p.travel}" data-change="travelInput" aria-label="Тривалість дороги, хвилин"><span class="st-unit">хв</span><button type="button" class="st-btn" data-act="travelStep" data-d="5" aria-label="Плюс 5 хвилин">+</button></div></div>`}
+      <div class="row field-row" id="travelRow"${home ? ' hidden' : ''}><span class="row-label">Тривалість дороги</span>
+        <div class="stepper"><button type="button" class="st-btn" data-act="travelStep" data-d="-5" aria-label="Мінус 5 хвилин">−</button><input class="st-input" id="travelInput" type="number" inputmode="numeric" min="0" max="600" value="${m.travel[m.transport] ?? 0}" data-change="travelInput" aria-label="Тривалість дороги, хвилин"><span class="st-unit">хв</span><button type="button" class="st-btn" data-act="travelStep" data-d="5" aria-label="Плюс 5 хвилин">+</button></div></div>
       <div class="row field-col"><span class="row-label">Запас часу</span>${seg('Запас часу', L.BUFFERS.map((b) => ({ id: b, name: `${b}` })), m.buffer, 'mBuffer')}</div>
     </div>
-    <p class="foot">${esc(end)} о <b>${L.fmtHM(p.departure)}</b>, підйом о <b>${L.fmtHM(p.wake)}</b>. Запас — у хвилинах. Тривалість дороги запамʼятовується окремо для кожного виду транспорту.</p>`;
+    <p class="foot" id="routeFoot">${routeFoot(m)}</p>`;
 }
 
 function openRoute(app) {
   openSheet(routeHtml(app), { label: 'Маршрут' });
 }
-function refreshRoute(app) {
+// Після зміни оновлюємо лише залежні частини панелі. Поля, з якими людина працює (вибір часу
+// на iPhone, введення хвилин), не перебудовуються — інакше колесо вибору закривається після першої цифри.
+function syncRoute(app) {
   const d = document.getElementById('sheet');
-  if (!d.open) return;
-  const body = d.querySelector('.sheet-body');
-  const top = body.scrollTop;
-  body.innerHTML = routeHtml(app);
-  body.scrollTop = top;
+  if (!d.open || !d.querySelector('#routeFoot')) return;
+  const m = tplOf(app);
+  const home = L.homeDay(m);
+  for (const b of d.querySelectorAll('[data-act="mTransport"]')) b.setAttribute('aria-checked', String(b.dataset.v === m.transport));
+  for (const b of d.querySelectorAll('[data-act="mBuffer"]')) b.setAttribute('aria-checked', String(+b.dataset.v === m.buffer));
+  d.querySelector('#travelRow').hidden = home;
+  d.querySelector('#arrivalLabel').textContent = home ? 'Початок справ' : 'Бажаний час прибуття';
+  const ti = d.querySelector('#travelInput');
+  if (ti && document.activeElement !== ti) ti.value = m.travel[m.transport] ?? 0;
+  const ai = d.querySelector('#arrivalInput');
+  if (ai && document.activeElement !== ai && ai.value !== m.arrival) ai.value = m.arrival;
+  d.querySelector('#routeFoot').innerHTML = routeFoot(m);
 }
 // Змінювати можна шаблон, що не використовується в поточній підготовці.
 function editTpl(app, fn) {
   app.commit((s) => fn(L.currentTpl(s)));
-  refreshRoute(app);
+  syncRoute(app);
 }
 
 /* ---------- Редактор кроку ---------- */
@@ -384,6 +396,20 @@ function openEssEditor(app) {
   </form>`, { label: 'Вихід без забутого' });
 }
 
+function dupTemplate(app, name = '') {
+  const customs = app.state.morning.templates.filter((t) => t.kind === 'custom').length;
+  if (customs >= L.TPL_CUSTOM_MAX) { toast(`Власних шаблонів може бути до ${L.TPL_CUSTOM_MAX}`); return; }
+  const src = L.currentTpl(app.state);
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = `tpl-c${L.uid().replace(/[^\w]/g, '').slice(0, 10)}`;
+  copy.kind = 'custom';
+  copy.name = (name || `${src.name}, копія`).slice(0, 40);
+  copy.steps = copy.steps.map((s) => ({ ...s, id: L.uid() }));
+  app.commit((s) => { s.morning.templates.push(copy); s.morning.active = copy.id; });
+  openRoute(app);
+  setTimeout(() => document.getElementById('tplName')?.focus(), 320);
+}
+
 const actions = {
   openStep,
   saveStep,
@@ -449,20 +475,9 @@ const actions = {
     const p = L.computePlan(t);
     toast(`${t.name}: підйом о ${L.fmtHM(p.wake)}, ${L.endLabel(t).toLowerCase()} о ${L.fmtHM(p.departure)}`, null, 2600);
   },
-  tplNew(app) { actions.tplDup(app, null, 'Мій ранок'); },
-  tplDup(app, el, name = '') {
-    const customs = app.state.morning.templates.filter((t) => t.kind === 'custom').length;
-    if (customs >= L.TPL_CUSTOM_MAX) { toast(`Власних шаблонів може бути до ${L.TPL_CUSTOM_MAX}`); return; }
-    const src = L.currentTpl(app.state);
-    const copy = JSON.parse(JSON.stringify(src));
-    copy.id = `tpl-c${L.uid().replace(/[^\w]/g, '').slice(0, 10)}`;
-    copy.kind = 'custom';
-    copy.name = (name || `${src.name}, копія`).slice(0, 40);
-    copy.steps = copy.steps.map((s) => ({ ...s, id: L.uid() }));
-    app.commit((s) => { s.morning.templates.push(copy); s.morning.active = copy.id; });
-    openRoute(app);
-    setTimeout(() => document.getElementById('tplName')?.focus(), 320);
-  },
+  tplNew(app) { dupTemplate(app, 'Мій ранок'); },
+  // Третій аргумент дії — подія натискання, тому назву копії передаємо лише через dupTemplate.
+  tplDup(app) { dupTemplate(app); },
   async tplDelete(app, el) {
     const t = app.state.morning.templates.find((x) => x.id === el.dataset.id);
     if (!t || t.kind !== 'custom') return;
@@ -479,6 +494,8 @@ const actions = {
     const name = el.value.trim().slice(0, 40);
     if (!name) return;
     app.commit((s) => { const t = L.currentTpl(s); if (t.kind === 'custom') t.name = name; });
+    const head = document.querySelector('#sheet .sheet-title');
+    if (head) head.textContent = name;
     toast('Назву збережено', null, 1500, 'check');
   },
   mArrival(app, el) {

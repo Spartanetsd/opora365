@@ -153,8 +153,8 @@ const actions = {
   setRestAt(app, el) {
     const v = L.parseHM(el.value);
     if (v == null) return;
+    // Значення видно в самому полі; повідомлення на кожен оберт колеса вибору лише заважало б.
     app.commit((s) => { s.settings.restAt = L.fmtHM(v); }, { render: false });
-    toast('Збережено', null, 1600, 'check');
   },
   setHaptic(app, el) {
     app.commit((s) => { s.settings.haptics = el.checked; }, { render: false });

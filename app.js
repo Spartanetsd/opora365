@@ -16,7 +16,7 @@ import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.0.2';
+const VERSION = '3.0.3';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools, stats };
 const TABS = [
@@ -313,8 +313,10 @@ function applyMode() {
 
 /* ---------- Час: щохвилинне оновлення, новий день, живі відліки ---------- */
 
+// Сторінку не перемальовуємо лише тоді, коли людина вводить текст у самій сторінці.
+// Відкрита нижня панель не заважає: вона окремо, а числа під нею (ранок, пульс) мають бути свіжими.
 function busy() {
-  return $('#sheet').open || document.activeElement?.matches?.('input, textarea, select') || document.documentElement.classList.contains('dragging');
+  return !!document.activeElement?.matches?.('#view input, #view textarea, #view select') || document.documentElement.classList.contains('dragging');
 }
 
 function tick() {

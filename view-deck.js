@@ -177,8 +177,8 @@ function assignHtml(app) {
       <input type="hidden" name="pr" value="1">
       <h3 class="sub-h">Що необхідно</h3>
       <textarea class="textarea" name="needs" rows="3" maxlength="1500" placeholder="Документи, люди, транспорт… Кожен пункт — з нового рядка, стане кроком справи"></textarea>
-      <div class="scr-foot"><button type="submit" class="btn btn-primary btn-xl btn-block">${icon('plus')}Додати в справи</button>
-      <p class="hint">Дата й час стануть дедлайном. Особисту організацію записуйте без оперативних відомостей.</p></div>
+      <p class="hint">Дата й час стануть дедлайном. Особисту організацію записуйте без оперативних відомостей.</p>
+      <div class="scr-foot"><button type="submit" class="btn btn-primary btn-xl btn-block">${icon('plus')}Додати в справи</button></div>
     </form>
   </div>`;
 }

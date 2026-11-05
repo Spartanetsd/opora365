@@ -61,7 +61,7 @@ function showModalTop(d) {
 function adoptToast(d) {
   const el = $('#toast');
   if (!el || !el.classList.contains('show') || d.contains(el)) return;
-  if (Date.now() - toastAt < 400) d.append(el);
+  if (performance.now() - toastAt < 400) d.append(el);
   else { el.classList.remove('show'); clearTimeout(toastTimer); }
 }
 export function homeToast(from) {
@@ -80,7 +80,7 @@ export function toast(message, action = null, ms = 0, ic = '') {
   el.classList.remove('show');
   void el.offsetWidth;
   el.classList.add('show');
-  toastAt = Date.now();
+  toastAt = performance.now();
   clearTimeout(toastTimer);
   if (ms !== Infinity) toastTimer = setTimeout(hide, ms || (action ? 5000 : 2600));
 }
@@ -92,6 +92,22 @@ function syncModalClass() {
   document.documentElement.classList.toggle('modal-open', any);
 }
 
+// Заголовок вікна («Скасувати — Назва — Готово») виносимо за межі області прокручування:
+// прокручений вміст ховається під ним і ніколи не малюється поверх. Кнопки «Готово» лишаються
+// повʼязаними зі своєю формою через атрибут form.
+let formSeq = 0;
+function liftHead(d, sel, before = null) {
+  const head = d.querySelector(sel);
+  if (!head) return false;
+  const form = head.closest('form');
+  if (form) {
+    if (!form.id) form.id = `vform${++formSeq}`;
+    for (const b of head.querySelectorAll('button[type="submit"], button:not([type])')) b.setAttribute('form', form.id);
+  }
+  if (before) d.insertBefore(head, before); else d.append(head);
+  return true;
+}
+
 let closeTimer = 0;
 export function openSheet(html, { onClose = null, label = 'Панель' } = {}) {
   const d = $('#sheet');
@@ -101,6 +117,8 @@ export function openSheet(html, { onClose = null, label = 'Панель' } = {})
   d.setAttribute('aria-label', label);
   const kept = rescueToast(d);
   d.innerHTML = `<div class="sheet-grab" aria-hidden="true"><span></span></div><div class="sheet-body" tabindex="-1">${html}</div>`;
+  liftHead(d, '.sheet-body .sheet-head', d.querySelector('.sheet-body'));
+  d.classList.remove('scrolled');
   d.dataset.dirty = '';
   d.onCloseOnce = onClose;
   if (!d.open) showModalTop(d);
@@ -183,6 +201,12 @@ function enableDrag(d) {
 // Дотик поза панеллю закриває її, лише якщо це справжній дотик (не прокручування) і почався він теж поза панеллю.
 function enableBackdrop(d) {
   let down = null;
+  // Коли закривається колесо вибору часу чи дати, iOS може передати останній дотик сторінці.
+  // Такий дотик протягом 0,7 с після зміни поля — не команда закрити панель.
+  let edited = -1e9;
+  const touchEdit = () => { edited = performance.now(); };
+  d.addEventListener('input', touchEdit, true);
+  d.addEventListener('change', touchEdit, true);
   const outside = (e) => {
     const r = d.getBoundingClientRect();
     return e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right;
@@ -193,6 +217,7 @@ function enableBackdrop(d) {
     down = null;
     if (e.target !== d || !start || !outside(e)) return;
     if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return;
+    if (performance.now() - edited < 700) return;
     // Відкрита клавіатура: перший дотик лише ховає її.
     if (typing(d)) { document.activeElement.blur(); return; }
     if (guarded(d)) { nudge(d); return; }
@@ -264,6 +289,7 @@ export function openScreen(html, { onClose = null, label = 'Екран', from = 
   d.setAttribute('aria-label', label);
   const kept = rescueToast(d);
   d.innerHTML = bgLayer(bg, bgPos) + AMBIENT + html;
+  d.classList.toggle('has-head', liftHead(d, '.scr > .scr-head'));
   d.onCloseOnce = onClose;
   if (kept) d.append($('#toast'));
   if (!wasOpen) {
@@ -296,6 +322,7 @@ export function updateScreen(html, { top = null } = {}) {
   const keep = ae && d.contains(ae) && ae.id ? ae.id : '';
   for (const el of [...d.children]) if (!el.classList.contains('scr-bg') && !el.classList.contains('ambient') && el.id !== 'toast') el.remove();
   d.insertAdjacentHTML('beforeend', html);
+  d.classList.toggle('has-head', liftHead(d, '.scr > .scr-head'));
   const t = $('#toast');
   if (t && d.contains(t)) d.append(t); // повідомлення — завжди поверх вмісту
   const sc2 = d.querySelector('.scr');
@@ -337,6 +364,11 @@ export function initDialogs() {
       enableBackdrop(d);
       enableDrag(d);
     }
+    // Вміст прокручено під заголовок: заголовок отримує тло й тонку лінію, текст не накладається.
+    d.addEventListener('scroll', (e) => {
+      const t = e.target;
+      if (t.classList?.contains('sheet-body') || t.classList?.contains('scr')) d.classList.toggle('scrolled', t.scrollTop > 2);
+    }, true);
   }
 }
 
