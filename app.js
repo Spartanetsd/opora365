@@ -16,7 +16,7 @@ import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.0.1';
+const VERSION = '3.0.2';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools, stats };
 const TABS = [
@@ -171,6 +171,23 @@ function parseHash() {
 
 /* ---------- Фонове зображення сторінки ---------- */
 // Живе поза вмістом: щохвилинне оновлення сторінки не перемальовує картинку.
+// Зображення розділів декодуються заздалегідь і лишаються в памʼяті (≈35 МБ), тож під час
+// перемикання вкладок картинка змінюється в тому ж кадрі, що й вміст, — без запізнення.
+
+const bdPool = new Map(); // src → { img, ready, done }
+function bdImage(src) {
+  let e = bdPool.get(src);
+  if (e) return e;
+  const img = new Image();
+  img.alt = '';
+  img.className = 'bd-img';
+  img.src = src;
+  const wait = img.decode ? img.decode() : new Promise((ok) => { img.onload = ok; img.onerror = ok; });
+  e = { img, done: false };
+  e.ready = wait.catch(() => {}).then(() => { e.done = true; });
+  bdPool.set(src, e);
+  return e;
+}
 
 function setBackdrop(spec) {
   const el = $('#backdrop');
@@ -178,28 +195,34 @@ function setBackdrop(spec) {
   document.documentElement.dataset.bd = spec ? spec.kind : '';
   if (el.dataset.key === key) return;
   el.dataset.key = key;
-  if (!spec) { el.hidden = true; el.replaceChildren(); return; }
+  if (!spec) { el.hidden = true; el.querySelectorAll('.bd-img').forEach((o) => o.remove()); return; }
   el.hidden = false;
   el.dataset.kind = spec.kind;
-  const img = new Image();
-  img.alt = '';
-  img.decoding = 'async';
-  img.className = 'bd-img';
-  img.setAttribute('fetchpriority', 'high');
-  img.style.objectPosition = spec.pos || 'center';
-  img.src = spec.src;
-  const old = [...el.querySelectorAll('.bd-img')];
-  if (old.length && !reduceMotion()) {
-    img.classList.add('incoming');
-    el.prepend(img);
-    const show = () => requestAnimationFrame(() => img.classList.remove('incoming'));
-    if (img.complete) show(); else { img.onload = show; img.onerror = show; }
-    setTimeout(() => old.forEach((o) => o.remove()), 320);
-  } else {
-    old.forEach((o) => o.remove());
-    el.prepend(img);
-  }
   if (!el.querySelector('.bd-shade')) el.insertAdjacentHTML('beforeend', '<div class="bd-shade"></div>');
+  const e = bdImage(spec.src);
+  const img = e.img;
+  img.style.objectPosition = spec.pos || 'center';
+  // Попередня картинка зникає одразу: вона не повинна на мить зʼявлятися в рамці нового розділу.
+  el.querySelectorAll('.bd-img').forEach((o) => { if (o !== img) o.remove(); });
+  if (img.parentElement !== el) el.prepend(img);
+  if (e.done || reduceMotion()) { img.classList.remove('incoming'); return; }
+  // Перший показ, картинка ще декодується: тло рамки, потім коротка поява.
+  img.classList.add('incoming');
+  e.ready.then(() => requestAnimationFrame(() => img.classList.remove('incoming')));
+}
+
+// Після запуску по черзі готуємо картинки решти розділів (і другої теми для «Сьогодні»).
+function prewarmBackdrops() {
+  const srcs = new Set();
+  for (const v of Object.values(VIEWS)) {
+    try { const s = v.backdrop?.({ ...app, route: { tab: '', sub: '' } }); if (s) srcs.add(s.src); } catch { /* немає зображення */ }
+  }
+  const list = [...srcs];
+  const next = () => {
+    const src = list.shift();
+    if (src) bdImage(src).ready.then(() => setTimeout(next, 80));
+  };
+  setTimeout(next, 700);
 }
 
 // Зображення завжди не нижче за заголовок над ним: на iPhone з високою «чубчиком» зоною
@@ -422,6 +445,7 @@ async function boot() {
   history.replaceState('root', '', `#${app.route.tab}${app.route.sub ? `/${app.route.sub}` : ''}`);
   app.render({ enter: true });
   document.documentElement.classList.add('ready');
+  prewarmBackdrops();
   scheduleTick();
   setInterval(tick, 20000);
   store.persistence(true);
