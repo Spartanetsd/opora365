@@ -1,31 +1,42 @@
-// ОПОРА 365 — швидкі сценарії (чеклісти організації занять і справ) та каталог інструментів.
-// Тут немає тактичних рекомендацій, маршрутів чи позицій — лише особиста організація.
-import { uid } from './time.js';
+// ОПОРА 365 — швидкі сценарії (організаційні чеклісти занять і зборів), доручення та каталог інструментів.
+// Тут немає бойових алгоритмів, схем позицій чи тактичних рекомендацій — лише особиста організація.
+// Сценарії не збирають оперативних відомостей.
+import { uid, isKey, parseHM, fmtHM } from './time.js';
 
 export const KINDS = [
-  { id: 'med', name: 'Домедична допомога', desc: 'Підготувати заняття з домедичної допомоги', icon: 'medkit', tone: 'teal' },
-  { id: 'tac', name: 'Тактична підготовка', desc: 'Організувати навчальне заняття', icon: 'compass', tone: 'blue' },
-  { id: 'fire', name: 'Вогнева підготовка', desc: 'Організувати заняття в тирі', icon: 'target', tone: 'amber' },
-  { id: 'go', name: 'Терміновий виїзд', desc: 'Зібратися й нічого не забути', icon: 'exit', tone: 'coral' },
-  { id: 'task', name: 'Несподіване доручення', desc: 'Зафіксувати, оцінити, виконати', icon: 'clipboard', tone: 'moon' },
+  { id: 'med', name: 'Домедична підготовка', desc: 'Організувати заняття: план, манекени, турнікети', icon: 'medkit', tone: 'teal' },
+  { id: 'tac', name: 'Тактична підготовка', desc: 'Організувати заняття й інструктаж із безпеки', icon: 'compass', tone: 'blue' },
+  { id: 'fire', name: 'Вогнева підготовка', desc: 'Допуски, засоби захисту, журнали', icon: 'target', tone: 'amber' },
+  { id: 'go', name: 'Терміновий виїзд', desc: 'Зібратися швидко й нічого не забути', icon: 'exit', tone: 'coral' },
+  { id: 'task', name: 'Несподіване доручення', desc: 'Записати за хвилину й одразу додати в справи', icon: 'clipboard', tone: 'moon' },
   { id: 'custom', name: 'Власний сценарій', desc: 'Ваш чекліст на будь-який випадок', icon: 'layers', tone: 'slate' },
 ];
 export const KIND = Object.fromEntries(KINDS.map((k) => [k.id, k]));
-export const RUNS_MAX = 60;
+export const RUNS_MAX = 80;
 export const CUSTOM_MAX = 12;
+export const FAVS_MAX = 8;
 
 const st = (t, req = false) => ({ id: uid(), t, req });
+const build = ([items, req]) => items.map((t, i) => st(t, req.includes(i)));
 
 const TEMPLATES = {
-  med: ['Уточнити час, місце і кількість слухачів', 'План-конспект і тема заняття', 'Манекени й тренажери', 'Навчальні турнікети', 'Навчальний перевʼязувальний матеріал', 'Рукавички для слухачів', 'Журнал обліку занять', 'Проєктор або планшет заряджені'].map((t, i) => st(t, i < 3 || i === 6)),
-  tac: ['Уточнити тему, час і місце', 'План-конспект', 'Погодити заняття з керівником', 'Навчальне спорядження', 'Засоби звʼязку для заняття', 'Інструктаж з безпеки', 'Журнал обліку занять'].map((t, i) => st(t, [0, 2, 5].includes(i))),
-  fire: ['Уточнити час, тир і кількість учасників', 'Погодження і відомість', 'Інструктаж з техніки безпеки', 'Засоби захисту слуху й зору', 'Аптечка на місці заняття', 'Мішені й матеріали', 'Журнал обліку'].map((t, i) => st(t, i <= 4)),
-  go: ['Документи', 'Телефон і павербанк', 'Тривожний рюкзак', 'Медичний рюкзак', 'Засоби звʼязку заряджені', 'Вода', 'Ключі й гаманець', 'Повідомити рідних або керівника', 'Вимкнути прилади вдома'].map((t, i) => st(t, [0, 1, 7].includes(i))),
-  task: ['Записати суть доручення і хто дав', 'Уточнити строк виконання', 'Що потрібно: документи, люди, транспорт', 'Розбити на кроки', 'Доповісти про виконання'].map((t, i) => st(t, i <= 1)),
+  med: [['План заняття', 'Матеріали', 'Манекени', 'Тренувальні турнікети', 'Перевʼязувальні засоби', 'Навчальна документація', 'Перевірка приміщення'], [0, 2, 3, 6]],
+  tac: [['План', 'Документація', 'Дозволений навчальний інвентар', 'Підготовка місця', 'Інструктаж із безпеки'], [0, 3, 4]],
+  fire: [['План', 'Документація', 'Допуски', 'Засоби захисту', 'Організаційна перевірка безпеки', 'Необхідні журнали'], [0, 2, 3, 4, 5]],
+  go: [['Документи', 'Звʼязок', 'Живлення', 'Особисті речі', 'Екіпірування', 'Медичні засоби'], [0, 1, 2]],
 };
 
+// Типові шаблони попередньої версії: якщо користувач їх не змінював — замінюємо новими.
+const V2_TEXTS = {
+  med: ['Уточнити час, місце і кількість слухачів', 'План-конспект і тема заняття', 'Манекени й тренажери', 'Навчальні турнікети', 'Навчальний перевʼязувальний матеріал', 'Рукавички для слухачів', 'Журнал обліку занять', 'Проєктор або планшет заряджені'],
+  tac: ['Уточнити тему, час і місце', 'План-конспект', 'Погодити заняття з керівником', 'Навчальне спорядження', 'Засоби звʼязку для заняття', 'Інструктаж з безпеки', 'Журнал обліку занять'],
+  fire: ['Уточнити час, тир і кількість учасників', 'Погодження і відомість', 'Інструктаж з техніки безпеки', 'Засоби захисту слуху й зору', 'Аптечка на місці заняття', 'Мішені й матеріали', 'Журнал обліку'],
+  go: ['Документи', 'Телефон і павербанк', 'Тривожний рюкзак', 'Медичний рюкзак', 'Засоби звʼязку заряджені', 'Вода', 'Ключі й гаманець', 'Повідомити рідних або керівника', 'Вимкнути прилади вдома'],
+};
+const V2_NAMES = { med: 'Домедична допомога' };
+
 export function templateSteps(kind) {
-  return (TEMPLATES[kind] ? TEMPLATES[kind] : []).map((s) => ({ ...s, id: uid() }));
+  return TEMPLATES[kind] ? build(TEMPLATES[kind]) : [];
 }
 
 export function defaultScenarios() {
@@ -33,7 +44,7 @@ export function defaultScenarios() {
 }
 
 export function defaultDeck() {
-  return { scenarios: defaultScenarios(), active: null, runs: [] };
+  return { scenarios: defaultScenarios(), active: null, runs: [], favs: [] };
 }
 
 /* ---------- Запуск сценарію ---------- */
@@ -67,15 +78,70 @@ export function finishRun(deck, sc, nowMs = Date.now()) {
     missing: pr.missing.map((s) => s.t),
   };
   deck.active = null;
-  deck.runs.unshift(done);
-  if (deck.runs.length > RUNS_MAX) deck.runs.length = RUNS_MAX;
+  logRun(deck, done);
   return done;
+}
+
+function logRun(deck, r) {
+  deck.runs.unshift(r);
+  if (deck.runs.length > RUNS_MAX) deck.runs.length = RUNS_MAX;
+}
+
+/* ---------- Памʼять дій: останні й обрані ---------- */
+
+export function toggleFav(deck, sid) {
+  const has = deck.favs.includes(sid);
+  if (has) deck.favs = deck.favs.filter((x) => x !== sid);
+  else if (deck.favs.length < FAVS_MAX) deck.favs = [...deck.favs, sid];
+  return !has;
+}
+
+// Останні використані сценарії — без повторів, найсвіжіші першими.
+export function recentScenarios(deck, n = 4) {
+  const out = [];
+  const seen = new Set();
+  for (const r of deck.runs) {
+    if (!r.sid || seen.has(r.sid)) continue;
+    const sc = deck.scenarios.find((s) => s.id === r.sid);
+    if (!sc) continue;
+    seen.add(r.sid);
+    out.push({ sc, run: r });
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+/* ---------- Несподіване доручення: швидка форма → справа ---------- */
+
+export function assignmentTask({ what = '', date = '', time = '', pr = 1, needs = '' } = {}, today) {
+  const title = String(what).trim().slice(0, 300);
+  const due = isKey(date) ? date : today;
+  const tm = parseHM(time);
+  const sub = String(needs).split('\n').map((x) => x.trim().slice(0, 120)).filter(Boolean).slice(0, 30).map((t) => ({ id: uid(), t, d: 0 }));
+  return {
+    title,
+    pr: [1, 2, 3].includes(+pr) ? +pr : 1,
+    due,
+    time: tm == null ? '' : fmtHM(tm),
+    deadline: due,
+    cat: 'work',
+    note: '',
+    sub,
+  };
+}
+
+// Запис у памʼять дій: доручення теж зʼявляється серед останніх.
+export function logAssignment(deck, title, nowMs = Date.now()) {
+  logRun(deck, {
+    id: uid(), sid: 'sc-task', title: `Доручення: ${String(title).slice(0, 48)}`, kind: 'task', startedAt: nowMs, finishedAt: nowMs,
+    checked: {}, note: '', result: 'done', total: 0, doneCount: 0, reqTotal: 0, reqDone: 0, missing: [],
+  });
 }
 
 /* ---------- Інструменти ---------- */
 
 export const TOOL_CATS = [
-  { id: 'work', name: 'Служба' },
+  { id: 'work', name: 'Робота' },
   { id: 'apps', name: 'Мої застосунки' },
   { id: 'svc', name: 'Сервіси' },
   { id: 'info', name: 'Інформація' },
@@ -175,18 +241,27 @@ function cleanSteps(raw) {
   return out;
 }
 
+const sameTexts = (steps, texts) => steps.length === texts.length && steps.every((s, i) => s.t === texts[i]);
+
 export function cleanDeck(raw) {
   const d = defaultDeck();
   if (!plain(raw)) return d;
+  const runningSid = plain(raw.active) && okId(raw.active.sid) ? raw.active.sid : '';
   const scenarios = [];
   const ids = new Set();
   for (const s of Array.isArray(raw.scenarios) ? raw.scenarios : []) {
     if (!plain(s) || !KIND[s.kind]) continue;
-    const title = typeof s.title === 'string' ? s.title.trim().slice(0, 60) : '';
+    let title = typeof s.title === 'string' ? s.title.trim().slice(0, 60) : '';
     let id = okId(s.id) ? s.id : uid();
     if (ids.has(id)) id = uid();
-    const steps = cleanSteps(s.steps);
+    let steps = cleanSteps(s.steps);
     if (!title) continue;
+    // Незмінені типові шаблони попередньої версії оновлюємо до нових.
+    if (V2_TEXTS[s.kind] && id === `sc-${s.kind}` && runningSid !== id && sameTexts(steps, V2_TEXTS[s.kind])) {
+      steps = templateSteps(s.kind);
+      if (title === (V2_NAMES[s.kind] || KIND[s.kind].name)) title = KIND[s.kind].name;
+    }
+    if (s.kind === 'task') { steps = []; if (title === 'Несподіване доручення') title = KIND.task.name; }
     ids.add(id);
     scenarios.push({ id, kind: s.kind, title, steps });
   }
@@ -199,7 +274,7 @@ export function cleanDeck(raw) {
 
   let active = null;
   const ra = raw.active;
-  if (plain(ra) && okId(ra.sid) && scenarios.some((s) => s.id === ra.sid) && stamp(ra.startedAt)) {
+  if (plain(ra) && okId(ra.sid) && scenarios.some((s) => s.id === ra.sid && s.kind !== 'task') && stamp(ra.startedAt)) {
     const checked = {};
     if (plain(ra.checked)) for (const [k, v] of Object.entries(ra.checked)) if (stamp(v)) checked[k] = stamp(v);
     const sc = scenarios.find((s) => s.id === ra.sid);
@@ -226,7 +301,9 @@ export function cleanDeck(raw) {
     });
   }
   runs.sort((a, b) => b.finishedAt - a.finishedAt);
-  return { scenarios, active, runs };
+  const favs = [];
+  for (const f of Array.isArray(raw.favs) ? raw.favs : []) if (scenarios.some((s) => s.id === f) && !favs.includes(f) && favs.length < FAVS_MAX) favs.push(f);
+  return { scenarios, active, runs, favs };
 }
 
 export function cleanTools(raw) {

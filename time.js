@@ -92,6 +92,14 @@ export function plural(n, [one, few, many]) {
 export const count = (n, forms) => `${n} ${plural(n, forms)}`;
 export const daysWord = (n) => count(n, ['день', 'дні', 'днів']);
 
+// Зворотний відлік: «12:05» (хв:с) до години, далі «1 год 05 хв».
+export function fmtClock(sec) {
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  if (h) return `${h} год ${String(m).padStart(2, '0')} хв`;
+  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+}
+
 // «через 25 хв» / «зараз» / «25 хв тому»
 export function relIn(delta) {
   if (Math.abs(delta) < 1) return 'зараз';

@@ -1,8 +1,8 @@
 {
   "name": "opora365",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "ОПОРА 365 · Obsidian Flow — PWA для iPhone: наступна дія, ранок, справи за пріоритетами, екіпірування, швидкі сценарії, інструменти",
+  "description": "ОПОРА 365 · Obsidian Clarity — PWA для iPhone: наступна дія, «Не забути», ранок, готовність спорядження, швидкі сценарії, вечірній підсумок",
   "type": "module",
   "scripts": {
     "test": "node tests.js",

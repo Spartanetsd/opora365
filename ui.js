@@ -37,10 +37,11 @@ export function haptic() {
 /* ---------- Коротке повідомлення ---------- */
 
 let toastTimer = 0;
-export function toast(message, action = null, ms = 0) {
+// ic — піктограма підтвердження (наприклад, 'check' після збереження).
+export function toast(message, action = null, ms = 0, ic = '') {
   const el = $('#toast');
   if (!el) return;
-  el.innerHTML = `<span class="toast-text">${esc(message)}</span>${action ? `<button type="button" class="toast-btn">${esc(action.label)}</button>` : ''}`;
+  el.innerHTML = `${ic ? `<span class="toast-ic">${icon(ic)}</span>` : ''}<span class="toast-text">${esc(message)}</span>${action ? `<button type="button" class="toast-btn">${esc(action.label)}</button>` : ''}`;
   const hide = () => el.classList.remove('show');
   if (action) el.querySelector('.toast-btn').addEventListener('click', () => { hide(); action.run(); }, { once: true });
   el.classList.remove('show');
@@ -154,18 +155,20 @@ export function choiceSheet({ title, text = '', options }) {
   });
 }
 
-/* ---------- Повноекранний режим (Фокус, перевірка, сценарій) ---------- */
+/* ---------- Повноекранний режим (Фокус, перевірка, сценарій, підсумок) ---------- */
 
 const AMBIENT = '<div class="ambient" aria-hidden="true"></div>';
+// Фонове зображення екрана живе окремо від вмісту: оновлення вмісту його не перемальовує.
+const bgLayer = (bg, pos) => (bg ? `<div class="scr-bg" aria-hidden="true"><img src="${esc(bg)}" alt="" decoding="async" style="object-position:${esc(pos)}"></div>` : '');
 export function screenOpen() { return $('#screen').open; }
 
 // from — елемент, з якого «виростає» екран (плитка, кнопка); анімація лише clip-path і opacity.
-export function openScreen(html, { onClose = null, label = 'Екран', from = null, cls = '' } = {}) {
+export function openScreen(html, { onClose = null, label = 'Екран', from = null, cls = '', bg = '', bgPos = 'center' } = {}) {
   const d = $('#screen');
   const wasOpen = d.open;
-  d.className = `screen ${cls}`.trim();
+  d.className = `screen ${cls}${bg ? ' has-bg' : ''}`.trim();
   d.setAttribute('aria-label', label);
-  d.innerHTML = AMBIENT + html;
+  d.innerHTML = bgLayer(bg, bgPos) + AMBIENT + html;
   d.onCloseOnce = onClose;
   if (!wasOpen) {
     d.showModal();
@@ -187,17 +190,27 @@ export function openScreen(html, { onClose = null, label = 'Екран', from = 
   return d;
 }
 
-export function updateScreen(html) {
+export function updateScreen(html, { top = null } = {}) {
   const d = $('#screen');
   if (!d.open) return;
   const sc = d.querySelector('.scr');
-  const top = sc ? sc.scrollTop : 0;
+  const was = sc ? sc.scrollTop : 0;
   const ae = document.activeElement;
   const keep = ae && d.contains(ae) && ae.id ? ae.id : '';
-  d.innerHTML = AMBIENT + html;
+  for (const el of [...d.children]) if (!el.classList.contains('scr-bg') && !el.classList.contains('ambient')) el.remove();
+  d.insertAdjacentHTML('beforeend', html);
   const sc2 = d.querySelector('.scr');
-  if (sc2) sc2.scrollTop = top;
+  if (sc2) sc2.scrollTop = top ?? was;
   if (keep) document.getElementById(keep)?.focus({ preventScroll: true });
+}
+
+// Змінити фон відкритого екрана (наприклад, перевірка → результат).
+export function setScreenBg(bg, pos = 'center') {
+  const d = $('#screen');
+  if (!d.open) return;
+  d.querySelector('.scr-bg')?.remove();
+  if (bg) d.insertAdjacentHTML('afterbegin', bgLayer(bg, pos));
+  d.classList.toggle('has-bg', !!bg);
 }
 
 export function closeScreen() {

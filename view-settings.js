@@ -1,30 +1,85 @@
-// ОПОРА 365 — налаштування, резервні копії, оновлення і чесне пояснення обмежень iOS.
+// ОПОРА 365 — компактне меню, налаштування, резервні копії, оновлення і чесне пояснення обмежень iOS.
 import * as L from './logic.js';
 import * as store from './store.js';
-import { $, esc, icon, seg, openSheet, sheetHead, confirmSheet, toast, setHaptics } from './ui.js';
+import { $, esc, icon, seg, openSheet, closeSheet, sheetHead, confirmSheet, toast, setHaptics } from './ui.js';
+import { openEvening } from './view-evening.js';
 
-function html(app) {
+/* ---------- Меню ---------- */
+
+export function openMenu(app) {
+  const mi = L.modeInfo(app.state);
+  const tpl = L.currentTpl(app.state);
+  const tv = L.taskView(app.state.tasks, app.today);
+  const theme = { dark: 'Obsidian', light: 'Світла', auto: 'Як у системі' }[app.state.settings.theme];
+  const row = (act, ic, title, meta = '', extra = '') => `<button type="button" class="row row-btn" data-act="${act}"${extra}>
+    <span class="row-ic">${icon(ic)}</span>
+    <span class="row-main"><span class="row-title">${title}</span>${meta ? `<span class="row-meta">${esc(meta)}</span>` : ''}</span>
+    ${icon('chev', 'row-chev')}
+  </button>`;
+  openSheet(`${sheetHead('Меню')}
+    <div class="list menu-list">
+      ${row('menuGo', 'sunrise', 'Мій ранок', `${tpl.name}, підйом о ${L.fmtHM(L.computePlan(tpl).wake)}`, ' data-tab="morning"')}
+      ${row('menuGo', 'list', 'Усі справи', `Пошук, без дати, архів. У роботі: ${tv.openCount + tv.upcoming.length + tv.nodate.length}`, ' data-tab="tasks"')}
+      ${row('menuEvening', 'moon', 'Вечірній підсумок', 'Зроблене, перенесення, головне на завтра')}
+      ${row('menuGo', 'chart', 'Підсумки тижня', 'Лише факти, без оцінок', ' data-tab="stats"')}
+      ${row('menuGo', 'apps', 'Інструменти', `Сайти й застосунки: ${app.state.tools.length}`, ' data-tab="tools"')}
+    </div>
+    <div class="list menu-list">
+      ${row('openMode', L.MODE[mi.id].icon, 'Режим дня', `${L.MODE[mi.id].name}${mi.manual ? ', вручну' : ', автоматично'}`)}
+      ${row('openSettings', 'gear', 'Налаштування', `Тема: ${theme}. Імʼя, вечір, відгук`)}
+      ${row('openBackup', 'share', 'Резервні копії', app.state.settings.lastBackupAt ? `Остання: ${L.whenText(app.state.settings.lastBackupAt, app.today)}` : 'Копій ще не було')}
+    </div>
+    <p class="foot center">ОПОРА 365, версія ${esc(app.version)}. Obsidian Clarity</p>`, { label: 'Меню' });
+}
+
+/* ---------- Налаштування ---------- */
+
+function settingsHtml(app) {
   const s = app.state.settings;
-  const sum = L.overview(app.state);
-  const stale = !s.lastBackupAt || L.diffDays(L.todayKey(s.lastBackupAt), app.today) > 7;
   return `${sheetHead('Налаштування')}
   <h3 class="sub-h">Оформлення</h3>
-  ${seg('Тема', [{ id: 'dark', name: 'Obsidian' }, { id: 'light', name: 'Daylight' }, { id: 'auto', name: 'Як у системі' }], s.theme, 'setTheme')}
+  ${seg('Тема', [{ id: 'dark', name: 'Obsidian' }, { id: 'light', name: 'Світла' }, { id: 'auto', name: 'Як у системі' }], s.theme, 'setTheme')}
   <p class="hint">Колір рядка стану iPhone оновиться після перезапуску застосунку з іконки.</p>
 
   <h3 class="sub-h">Особисте</h3>
   <div class="list">
     <label class="row field-row"><span class="row-main"><span class="row-title">Звертання</span><span class="row-meta">У привітанні, у кличному відмінку</span></span><input class="input-plain" style="text-align:right;max-width:45%" id="nameInput" value="${esc(s.name)}" maxlength="40" placeholder="Імʼя" data-change="setName" aria-label="Як до вас звертатися"></label>
-    <label class="row field-row"><span class="row-main"><span class="row-title">Відпочинок з</span><span class="row-meta">Автоматичний режим увечері</span></span><input class="time-input" type="time" value="${esc(s.restAt)}" data-change="setRestAt" aria-label="Час початку режиму «Відпочинок»"></label>
-    <label class="row field-row"><span class="row-main"><span class="row-title">Тактильний відгук</span><span class="row-meta">Лише там, де його підтримує платформа</span></span><input type="checkbox" class="switch" data-change="setHaptic"${s.haptics ? ' checked' : ''}></label>
+    <label class="row field-row"><span class="row-main"><span class="row-title">Вечір з</span><span class="row-meta">Режим «Відпочинок» і вечірній підсумок</span></span><input class="time-input" type="time" value="${esc(s.restAt)}" data-change="setRestAt" aria-label="Час початку вечора"></label>
+    <label class="row field-row"><span class="row-main"><span class="row-title">Тактильний відгук</span><span class="row-meta">Лише там, де його підтримує платформа. Звуків немає</span></span><input type="checkbox" class="switch" data-change="setHaptic"${s.haptics ? ' checked' : ''}></label>
   </div>
 
+  <h3 class="sub-h">Нагадування</h3>
+  <div class="note-card">
+    <span class="note-ic" aria-hidden="true">${icon('info')}</span>
+    <div class="note-body">
+      <p class="note-t">Чесно про обмеження iOS</p>
+      <p>Встановлений з Safari застосунок не може сам надіслати сповіщення, коли закритий: для цього потрібен сервер Web Push, якого тут свідомо немає. Наступна дія, прострочене й перевірки видно, щойно ви відкриваєте застосунок.</p>
+      <p>Щоб не проспати: «Команди», «Автоматизація», «+», «Час доби» (ваш час підйому), «Запускати одразу», дія «Показати сповіщення» з текстом «Відкрий ОПОРА».</p>
+    </div>
+  </div>
+
+  <h3 class="sub-h">Застосунок</h3>
+  <div class="list">
+    <button type="button" class="row row-btn" data-act="checkUpdate">${icon('reset')}<span class="row-main"><span class="row-title">Перевірити оновлення</span><span class="row-meta" id="updState">Версія ${esc(app.version)}. Працює офлайн після першого запуску</span></span></button>
+    <button type="button" class="row row-btn" data-act="welcomeAgain">${icon('sun')}<span>Вітальний екран</span></button>
+    <a class="row row-btn" href="tests.html" target="_blank" rel="noopener">${icon('checkCircle')}<span>Тести логіки в цьому браузері</span></a>
+    <button type="button" class="row row-btn danger" data-act="wipeAll">${icon('trash')}<span>Стерти всі дані</span></button>
+  </div>
+  <p class="foot center">ОПОРА 365, версія ${esc(app.version)}. Obsidian Clarity<br>Часовий пояс: ${esc(L.TIME_AREA)}</p>`;
+}
+
+function backupHtml(app) {
+  const s = app.state.settings;
+  const sum = L.overview(app.state);
+  const stale = !s.lastBackupAt || L.diffDays(L.todayKey(s.lastBackupAt), app.today) > 7;
+  return `${sheetHead('Резервні копії')}
   <h3 class="sub-h">Дані на цьому пристрої</h3>
   <div class="list">
-    <div class="row"><span class="row-label">Справи у роботі</span><span class="row-value">${sum.tasks}</span></div>
-    <div class="row"><span class="row-label">Обовʼязкові</span><span class="row-value">${sum.musts}</span></div>
-    <div class="row"><span class="row-label">Предмети · перевірки</span><span class="row-value">${sum.items} · ${sum.checks}</span></div>
-    <div class="row"><span class="row-label">Сценарії · інструменти</span><span class="row-value">${sum.scenarios} · ${sum.tools}</span></div>
+    <div class="row"><span class="row-label">Справи в роботі / в архіві</span><span class="row-value">${sum.tasks} / ${sum.tasksDone}</span></div>
+    <div class="row"><span class="row-label">«Не забути»</span><span class="row-value">${sum.musts}</span></div>
+    <div class="row"><span class="row-label">Шаблони ранку</span><span class="row-value">${sum.templates}</span></div>
+    <div class="row"><span class="row-label">Предмети / перевірки</span><span class="row-value">${sum.items} / ${sum.checks}</span></div>
+    <div class="row"><span class="row-label">Сценарії / інструменти</span><span class="row-value">${sum.scenarios} / ${sum.tools}</span></div>
     <div class="row"><span class="row-label">Постійне сховище</span><span class="row-value" id="persistState">перевіряю…</span></div>
     <div class="row"><span class="row-label">Резервна копія</span><span class="row-value${stale ? ' warn' : ''}">${s.lastBackupAt ? L.whenText(s.lastBackupAt, app.today) : 'ще не створювалась'}</span></div>
   </div>
@@ -32,35 +87,24 @@ function html(app) {
     <button type="button" class="row row-btn" data-act="backupExport">${icon('share')}<span>Створити резервну копію</span></button>
     <button type="button" class="row row-btn" data-act="backupCheck">${icon('filecheck')}<span>Перевірити резервну копію</span></button>
     <button type="button" class="row row-btn" data-act="backupImport">${icon('import')}<span>Відновити з копії</span></button>
-    ${store.status.hasPrev ? `<button type="button" class="row row-btn" data-act="exportPrev">${icon('history')}<span class="row-main"><span class="row-title">Дані до оновлення 2.0</span><span class="row-meta">Збережено при першому запуску нової версії</span></span></button>` : ''}
+    ${store.status.hasPrev ? `<button type="button" class="row row-btn" data-act="exportPrev">${icon('history')}<span class="row-main"><span class="row-title">Дані до оновлення</span><span class="row-meta">Збережено як є перед переходом на нову версію</span></span></button>` : ''}
   </div>
   <div id="backupResult" aria-live="polite"></div>
-  <p class="foot">Усе зберігається лише локально: без хмари, входу й передавання в мережу. Якщо видалити іконку з початкового екрана, iOS зітре й дані — періодично зберігайте копію у «Файли». Копію не варто викладати в публічний репозиторій.</p>
-
-  <h3 class="sub-h">Нагадування</h3>
-  <div class="card pad">
-    <p style="margin:0 0 8px;font-weight:650">Чесно про обмеження iOS</p>
-    <p class="muted small" style="margin:0">Встановлений з Safari застосунок не може сам надіслати сповіщення, коли закритий: для цього потрібен сервер Web Push, якого тут свідомо немає. Нагадування всередині застосунку (наступна дія, прострочене, перевірки) працюють, коли ви його відкриваєте.</p>
-    <p class="muted small" style="margin:8px 0 0">Щоб не проспати: «Команди» → «Автоматизація» → «+» → «Час доби» (ваш час підйому) → «Запускати одразу» → дія «Показати сповіщення» з текстом «Відкрий ОПОРА». Запускайте ОПОРА з іконки: посилання з «Команд» відкривається в Safari, де інше сховище.</p>
-  </div>
-
-  <h3 class="sub-h">Застосунок</h3>
-  <div class="list">
-    <button type="button" class="row row-btn" data-act="checkUpdate">${icon('reset')}<span class="row-main"><span class="row-title">Перевірити оновлення</span><span class="row-meta" id="updState">Версія ${esc(app.version)} · працює офлайн після першого запуску</span></span></button>
-    <a class="row row-btn" href="tests.html" target="_blank" rel="noopener">${icon('checkCircle')}<span>Тести логіки в цьому браузері</span></a>
-    <button type="button" class="row row-btn danger" data-act="wipeAll">${icon('trash')}<span>Стерти всі дані</span></button>
-  </div>
-  <p class="foot center">ОПОРА 365 · Obsidian Flow · версія ${esc(app.version)}<br>Часовий пояс: ${esc(L.TIME_AREA)}</p>`;
+  <p class="foot">Усе зберігається лише локально: без хмари, входу й передавання в мережу. Якщо видалити іконку з початкового екрана, iOS зітре й дані — періодично зберігайте копію у «Файли». Не викладайте копію в публічний репозиторій.</p>`;
 }
 
-export function openSettings(app) {
-  openSheet(html(app), { label: 'Налаштування' });
+function persistCheck() {
   store.persistence(false).then((v) => {
     const el = $('#persistState');
     if (!el) return;
     el.textContent = v === true ? 'увімкнено' : v === false ? 'не підтверджено' : 'недоступно';
     el.classList.toggle('warn', v !== true);
   });
+}
+
+export function openSettings(app, part = '') {
+  if (part === 'backup') { openSheet(backupHtml(app), { label: 'Резервні копії' }); persistCheck(); return; }
+  openSheet(settingsHtml(app), { label: 'Налаштування' });
 }
 
 function result(message, tone) {
@@ -82,24 +126,35 @@ function describe(r, app) {
   const cur = L.overview(app.state);
   const made = r.exportedAt ? L.whenText(r.exportedAt, app.today) : 'невідомо коли';
   return `<b>Копія справна.</b> Створена ${made}${r.from < L.SCHEMA ? ' попередньою версією (буде перенесена без втрат)' : ''}.<br>
-    У копії: справ ${r.summary.tasks} (зараз ${cur.tasks}), обовʼязкових ${r.summary.musts} (зараз ${cur.musts}), предметів ${r.summary.items}, перевірок ${r.summary.checks}, інструментів ${r.summary.tools}, кроків ранку ${r.summary.steps}.${r.dropped ? `<br>Пошкоджених записів пропущено: ${r.dropped}.` : ''}`;
+    У копії: справ ${r.summary.tasks} (зараз ${cur.tasks}), «Не забути» ${r.summary.musts} (зараз ${cur.musts}), предметів ${r.summary.items}, перевірок ${r.summary.checks}, інструментів ${r.summary.tools}, шаблонів ранку ${r.summary.templates}.${r.dropped ? `<br>Пошкоджених записів пропущено: ${r.dropped}.` : ''}`;
 }
 
 const actions = {
-  openSettings,
+  openSettings(app) { openSettings(app); },
+  openBackup(app) { openSettings(app, 'backup'); },
+  menuGo(app, el) {
+    closeSheet();
+    app.go(el.dataset.tab, el.dataset.sub || '');
+  },
+  menuEvening(app) {
+    closeSheet();
+    setTimeout(() => openEvening(app), 210);
+  },
   setTheme(app, el) {
     el.closest('.seg').querySelectorAll('[role="radio"]').forEach((b) => b.setAttribute('aria-checked', String(b === el)));
     app.commit((s) => { s.settings.theme = el.dataset.v; }, { render: false });
     app.applyTheme();
+    app.render();
   },
   setName(app, el) {
     app.commit((s) => { s.settings.name = el.value.trim().slice(0, 40); }, { render: false });
-    toast('Збережено');
+    toast('Збережено', null, 1600, 'check');
   },
   setRestAt(app, el) {
     const v = L.parseHM(el.value);
     if (v == null) return;
     app.commit((s) => { s.settings.restAt = L.fmtHM(v); }, { render: false });
+    toast('Збережено', null, 1600, 'check');
   },
   setHaptic(app, el) {
     app.commit((s) => { s.settings.haptics = el.checked; }, { render: false });
@@ -112,7 +167,7 @@ const actions = {
     store.shareFile(name, text).then((how) => {
       if (how === 'cancelled') return;
       app.commit((s) => { s.settings.lastBackupAt = now; }, { render: false });
-      openSettings(app);
+      openSettings(app, 'backup');
       result(`Копію «${esc(name)}» створено. Збережіть її у «Файли», а потім перевірте кнопкою «Перевірити резервну копію».`, 'ok');
     });
   },
@@ -131,7 +186,7 @@ const actions = {
     const cur = L.overview(app.state);
     const ok = await confirmSheet({
       title: 'Відновити дані з копії?',
-      text: `Поточні дані (справ ${cur.tasks}, обовʼязкових ${cur.musts}, перевірок ${cur.checks}) буде замінено даними з копії (справ ${r.summary.tasks}, обовʼязкових ${r.summary.musts}, перевірок ${r.summary.checks}). Одразу після відновлення можна повернути попередній стан.`,
+      text: `Поточні дані (справ ${cur.tasks}, «Не забути» ${cur.musts}, перевірок ${cur.checks}) буде замінено даними з копії (справ ${r.summary.tasks}, «Не забути» ${r.summary.musts}, перевірок ${r.summary.checks}). Одразу після відновлення можна повернути попередній стан.`,
       ok: 'Відновити',
       danger: true,
     });
@@ -139,6 +194,7 @@ const actions = {
     store.keepBeforeImport(app.state);
     app.state = r.state;
     app.state.session = null;
+    app.state.settings.onboarded = true;
     store.save(app.state);
     app.applyTheme();
     app.applyMode();
@@ -175,13 +231,14 @@ const actions = {
   async wipeAll(app) {
     const ok = await confirmSheet({
       title: 'Стерти всі дані?',
-      text: 'Буде видалено справи, обовʼязкові, екіпірування з історією перевірок, сценарії, інструменти й налаштування на цьому пристрої. Відновити можна лише з резервної копії.',
+      text: 'Буде видалено справи, «Не забути», шаблони ранку, спорядження з історією перевірок, сценарії, інструменти й налаштування на цьому пристрої. Відновити можна лише з резервної копії.',
       ok: 'Стерти все',
       danger: true,
     });
     if (!ok) return;
     await store.wipe();
     app.state = L.defaultState();
+    app.state.settings.onboarded = true;
     store.save(app.state);
     app.applyTheme();
     app.applyMode();

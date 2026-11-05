@@ -7,7 +7,9 @@ import { cleanState, SCHEMA } from './logic.js';
 const DB_NAME = 'opora';
 const STORE = 'kv';
 const KEY = 'state';
-const KEY_PREV = 'state-before-v2';
+// Копія даних до оновлення схеми: «state-before-v3» (і старіша «state-before-v2», якщо була).
+const KEY_PREV = `state-before-v${SCHEMA}`;
+const KEY_PREV_OLD = 'state-before-v2';
 const LS_KEY = 'opora.state';
 const LS_BEFORE_IMPORT = 'opora.before-import';
 
@@ -56,22 +58,28 @@ export async function load(nowMs = Date.now()) {
   const raw = candidates[0] || null;
   if (raw && Number(raw.v) < SCHEMA) {
     status.migratedFrom = Number(raw.v) || 1;
+    // Перед міграцією дані зберігаються як є — до них можна повернутися з налаштувань.
+    const copy = { savedAt: nowMs, from: status.migratedFrom, data: raw };
     try {
       const kept = await tx('readonly', (s) => s.get(KEY_PREV));
-      if (!kept) await tx('readwrite', (s) => s.put({ savedAt: nowMs, data: raw }, KEY_PREV));
-    } catch { lsSet('opora.state-before-v2', { savedAt: nowMs, data: raw }); }
+      if (!kept) await tx('readwrite', (s) => s.put(copy, KEY_PREV));
+    } catch { if (!lsGet(`opora.${KEY_PREV}`)) lsSet(`opora.${KEY_PREV}`, copy); }
   }
   status.hasPrev = !!(await previousData());
   return { state: cleanState(raw, nowMs).state, fresh: !raw };
 }
 
-// Копія даних, якими користувався застосунок до оновлення 2.0 (якщо була).
+// Копія даних, якими користувався застосунок до останнього оновлення схеми (якщо була).
 export async function previousData() {
-  try {
-    const v = await tx('readonly', (s) => s.get(KEY_PREV));
-    if (v) return v;
-  } catch { /* немає доступу */ }
-  return lsGet('opora.state-before-v2');
+  for (const key of [KEY_PREV, KEY_PREV_OLD]) {
+    try {
+      const v = await tx('readonly', (s) => s.get(key));
+      if (v) return v;
+    } catch { /* немає доступу */ }
+    const l = lsGet(`opora.${key}`);
+    if (l) return l;
+  }
+  return null;
 }
 
 let timer = 0;

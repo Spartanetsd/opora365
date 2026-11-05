@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="uk" data-theme="dark" data-mode="day">
+<html lang="uk" data-theme="dark" data-scheme="dark" data-mode="day">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>ОПОРА 365</title>
-  <meta name="description" content="Особиста операційна система дня: наступна дія, ранок із часом виходу, справи за пріоритетами, екіпірування, швидкі сценарії та інструменти. Працює офлайн.">
+  <meta name="description" content="Особиста система дня: що найважливіше зараз, що не забути, що перевірити, що робити, коли плани змінилися, і що вже зроблено. Працює офлайн.">
   <meta name="theme-color" content="#080D16">
   <meta name="color-scheme" content="dark light">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,14 +15,15 @@
   <meta name="apple-mobile-web-app-title" content="ОПОРА 365">
   <meta name="format-detection" content="telephone=no">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="icon-180.png">
-  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="stylesheet" href="styles.css">
   <script src="theme.js"></script>
   <script type="module" src="app.js"></script>
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
+  <div id="backdrop" class="backdrop" aria-hidden="true" hidden></div>
 
   <main id="view" class="view" tabindex="-1">
     <div class="page boot" aria-busy="true"><p class="muted center" style="padding-top:30vh">ОПОРА 365 запускається…</p></div>

@@ -3,8 +3,7 @@
 import * as L from './logic.js';
 import * as D from './logic-deck.js';
 import { $, esc, icon, openSheet, closeSheet, confirmSheet, toast, sheetHead, haptic } from './ui.js';
-import { emptyState } from './components.js';
-import { switcher } from './view-deck.js';
+import { emptyState, photoHead } from './components.js';
 
 function tile(t, editing) {
   const v = D.checkUrl(t.url);
@@ -38,9 +37,7 @@ function render(app) {
   const used = new Set(app.state.tools.map((t) => t.cat));
   const cats = D.TOOL_CATS.filter((c) => used.has(c.id));
   return `<div class="page">
-    <h1 class="large-title" data-title-anchor>Інструменти</h1>
-    ${switcher('tools')}
-    <p class="page-sub">Ваші сервіси й застосунки — відкриваються одним дотиком</p>
+    ${photoHead({ title: 'Інструменти', sub: 'Ваші сервіси й застосунки — одним дотиком' })}
     <label class="search">${icon('search')}<input id="toolSearch" type="search" placeholder="Пошук" value="${esc(ui.toolQ)}" data-input="toolSearch" enterkeyhint="search" aria-label="Пошук інструментів" autocomplete="off"></label>
     ${cats.length > 1 ? `<div class="chips" role="radiogroup" aria-label="Категорії" style="margin-top:12px">
       <button type="button" class="chip plain" role="radio" aria-checked="${!ui.toolCat}" aria-pressed="${!ui.toolCat}" data-act="toolCat" data-v="">Усі</button>
@@ -157,7 +154,7 @@ const actions = {
       else Object.assign(s.tools.find((x) => x.id === id) || {}, data);
     });
     closeSheet();
-    toast(id === 'new' ? 'Інструмент додано' : 'Збережено');
+    toast(id === 'new' ? 'Інструмент додано' : 'Збережено', null, 1800, 'check');
   },
   async toolDelete(app, el) {
     const t = app.state.tools.find((x) => x.id === el.dataset.id);
@@ -170,4 +167,6 @@ const actions = {
   },
 };
 
-export default { title: 'Інструменти', render, chrome, actions };
+const backdrop = () => ({ src: 'abstract-07.webp', kind: 'band', pos: 'center 40%' });
+
+export default { title: 'Інструменти', render, chrome, backdrop, actions };

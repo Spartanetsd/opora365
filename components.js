@@ -1,8 +1,8 @@
-// ОПОРА 365 — компоненти дизайн-системи Obsidian Flow (рядки HTML/SVG).
-// HeroCard, PriorityCard, Timeline, ProgressRing/Orb, StatusSegment, ChecklistItem,
-// QuickActionTile, ModeSwitcher, EmptyState, ErrorState, DeadlineBar.
+// ОПОРА 365 — компоненти дизайн-системи Obsidian Clarity (рядки HTML/SVG).
+// Наступна дія, Пульс дня, рядки справ і «Не забути», статуси готовності, плитки сценаріїв, порожні стани.
 import { esc, icon } from './ui.js';
 import * as L from './logic.js';
+import * as G from './logic-gear.js';
 
 const TAU = Math.PI * 2;
 const f1 = (n) => Math.round(n * 100) / 100;
@@ -10,98 +10,23 @@ function polar(cx, cy, r, deg) {
   const a = (deg - 90) * (Math.PI / 180);
   return [f1(cx + r * Math.cos(a)), f1(cy + r * Math.sin(a))];
 }
-export function arcPath(cx, cy, r, a0, a1) {
-  const [x0, y0] = polar(cx, cy, r, a0);
-  const [x1, y1] = polar(cx, cy, r, a1);
-  const large = a1 - a0 > 180 ? 1 : 0;
-  return `M${x0} ${y0}A${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
-}
 
-/* ---------- ProgressRing / Day Orb ---------- */
+/* ---------- Кільце прогресу ---------- */
 
 // Попередні значення кілець — щоб анімувати лише реальну зміну.
 const prevRing = new Map();
-const prevSegs = new Map();
 
-// Кільце прогресу: суцільне (value/total) або сегментоване (масив станів).
-export function ring({ key, value = 0, total = 0, segs = null, r = 112, w = 14, cx = 150, cy = 150, tone = 'mode', clickable = null, labels = null, icons = null }) {
+export function ring({ key, value = 0, total = 0, r = 50, w = 10, cx = 60, cy = 60, tone = 'mode' }) {
   const C = TAU * r;
-  let out = `<circle class="ring-track" cx="${cx}" cy="${cy}" r="${r}" stroke-width="${w}"/>`;
-  if (segs && segs.length) {
-    const n = segs.length;
-    const gap = n > 1 ? Math.min(7, 70 / n) : 0;
-    const span = 360 / n;
-    const before = prevSegs.get(key) || [];
-    segs.forEach((s, i) => {
-      const a0 = i * span + gap / 2, a1 = (i + 1) * span - gap / 2;
-      const fresh = before.length === n && before[i] !== s && (s === 'done' || s === 'ok') ? ' pop' : '';
-      const d = arcPath(cx, cy, r, a0, a1);
-      const label = labels ? labels[i] : '';
-      const tag = clickable ? `<g class="rs-hit" role="button" tabindex="0" data-act="${clickable.act}" data-id="${esc(clickable.ids[i])}" aria-label="${esc(label)}">` : '<g>';
-      let extra = '';
-      if (s && typeof s === 'object') {
-        // { s: 'running', f: 0.4 } — частково заповнений сегмент
-        const part = a0 + (a1 - a0) * Math.max(0, Math.min(1, s.f));
-        extra = `<path class="rs rs-todo" d="${d}" stroke-width="${w}"/>${s.f > 0 ? `<path class="rs rs-running" d="${arcPath(cx, cy, r, a0, part)}" stroke-width="${w}"/>` : ''}`;
-      } else {
-        extra = `<path class="rs rs-${s}${fresh}" d="${d}" stroke-width="${w}"/>`;
-      }
-      let glyph = '';
-      if (icons && icons[i]) {
-        const [gx, gy] = polar(cx, cy, r, (a0 + a1) / 2);
-        glyph = `<g class="rs-ic" transform="translate(${f1(gx - 9)} ${f1(gy - 9)}) scale(.75)">${icon(icons[i], 'rs-glyph').replace('<svg ', '<svg width="24" height="24" ')}</g>`;
-      }
-      out += `${tag}${clickable ? `<path class="rs-pad" d="${d}" stroke-width="${w + 22}"/>` : ''}${extra}${glyph}</g>`;
-    });
-    prevSegs.set(key, segs.map((s) => (typeof s === 'object' ? s.s : s)));
-  } else {
-    const frac = total > 0 ? Math.max(0, Math.min(1, value / total)) : 0;
-    const from = prevRing.has(key) ? prevRing.get(key) : 0;
-    prevRing.set(key, frac);
-    out += `<circle class="ring-val ring-${tone}" cx="${cx}" cy="${cy}" r="${r}" stroke-width="${w}" stroke-dasharray="${f1(C)}" stroke-dashoffset="${f1(C * (1 - from))}" data-to="${f1(C * (1 - frac))}" transform="rotate(-90 ${cx} ${cy})"${frac === 0 ? ' opacity="0"' : ''}/>`;
-  }
-  return out;
+  const frac = total > 0 ? Math.max(0, Math.min(1, value / total)) : 0;
+  const from = prevRing.has(key) ? prevRing.get(key) : 0;
+  prevRing.set(key, frac);
+  return `<circle class="ring-track" cx="${cx}" cy="${cy}" r="${r}" stroke-width="${w}"/>
+    <circle class="ring-val" data-tone="${tone}" cx="${cx}" cy="${cy}" r="${r}" stroke-width="${w}" stroke-dasharray="${f1(C)}" stroke-dashoffset="${f1(C * (1 - from))}" data-to="${f1(C * (1 - frac))}" transform="rotate(-90 ${cx} ${cy})"${frac === 0 ? ' opacity="0"' : ''}/>`;
 }
 
-// Безель доби: 24 години, події дня і поточний час — реальні дані, не прикраса.
-function dial(cx, cy, r, events, nowMin) {
-  let s = '';
-  for (let h = 0; h < 24; h++) {
-    const major = h % 6 === 0;
-    const [x0, y0] = polar(cx, cy, r - (major ? 7 : 3.5), h * 15);
-    const [x1, y1] = polar(cx, cy, r, h * 15);
-    s += `<line class="tick${major ? ' major' : ''}" x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}"/>`;
-  }
-  for (const e of events) {
-    const [x, y] = polar(cx, cy, r + 8, (L.minOfDay(e.t) / 1440) * 360);
-    s += `<circle class="ev-dot ev-${e.kind}${e.done ? ' done' : ''}" cx="${x}" cy="${y}" r="2.6"/>`;
-  }
-  const [nx, ny] = polar(cx, cy, r + 8, (nowMin / 1440) * 360);
-  s += `<circle class="now-glow" cx="${nx}" cy="${ny}" r="8"/><circle class="now-dot" cx="${nx}" cy="${ny}" r="3.6"/>`;
-  return s;
-}
-
-export function dayOrb(orb, { events = [], nowMin = 0, label = '' } = {}) {
-  const segs = orb.segs && orb.segs.length && orb.segs.length <= 16 ? orb.segs : null;
-  const mode = L.MODE[orb.mode];
-  const phase = -((typeof performance !== 'undefined' ? performance.now() : 0) / 1000) % 7;
-  return `<div class="orb" data-level="${orb.level}" role="img" aria-label="${esc(label)}">
-    <div class="orb-halo" style="animation-delay:${phase.toFixed(2)}s" aria-hidden="true"></div>
-    <svg class="orb-svg" viewBox="0 0 300 300" aria-hidden="true" focusable="false">
-      <g class="dial">${dial(150, 150, 136, events, nowMin)}</g>
-      ${ring({ key: `orb-${orb.mode}`, value: orb.value, total: orb.total, segs, r: 112, w: 13 })}
-    </svg>
-    <div class="orb-center" aria-hidden="true">
-      <span class="orb-mode">${icon(mode.icon)}${esc(mode.name)}</span>
-      <span class="orb-big${orb.isTime ? ' is-time' : ''}">${esc(orb.big)}</span>
-      <span class="orb-cap">${esc(orb.caption)}</span>
-    </div>
-  </div>`;
-}
-
-// Невелике кільце для карток і заголовків (наприклад, прогрес сценарію).
 export function miniRing({ key, value, total, dim = 44, tone = 'mode' }) {
-  return `<svg class="mini-ring" width="${dim}" height="${dim}" viewBox="0 0 300 300" aria-hidden="true" focusable="false">${ring({ key, value, total, r: 120, w: 34, tone })}</svg>`;
+  return `<svg class="mini-ring" width="${dim}" height="${dim}" viewBox="0 0 120 120" aria-hidden="true" focusable="false">${ring({ key, value, total, r: 48, w: 14, tone })}</svg>`;
 }
 
 // Після вставлення HTML: плавно довести кільця до нових значень.
@@ -116,126 +41,173 @@ export function animateRings(root) {
   }));
 }
 
-/* ---------- HeroCard: «Твоя наступна дія» ---------- */
+/* ---------- Наступна дія (на зображенні головного екрана) ---------- */
 
 const PRIMARY = {
-  step: 'Готово', morning: 'Почати ранок', gearRun: 'Продовжити перевірку', deckRun: 'Продовжити',
-  task: 'Виконано', must: 'Виконано', gear: 'Почати перевірку', plan: 'Відкрити ранок', backup: 'Створити копію',
+  step: 'Готово', ess: 'Перевірити речі', morning: 'Почати ранок', gearRun: 'Продовжити перевірку', deckRun: 'Продовжити',
+  task: 'Виконано', must: 'Виконано', gear: 'Почати перевірку', evening: 'Підбити підсумок', backup: 'Створити копію',
 };
 
-export function heroCard(na, { then = null } = {}) {
+export function nbaBlock(na, { more = false } = {}) {
   if (!na) {
-    return `<section class="hero hero-empty" aria-labelledby="heroTitle">
-      <span class="eyebrow">Твоя наступна дія</span>
-      <h2 class="hero-title" id="heroTitle">Усе під контролем</h2>
-      <p class="hero-reason">Невиконаних справ, перевірок і нагадувань зараз немає.</p>
-      <button type="button" class="btn btn-tinted btn-lg btn-block" data-act="openAdd">${icon('plus')}Додати справу</button>
-    </section>`;
+    return `<div class="nba nba-calm">
+      <p class="nba-lead">Зараз</p>
+      <h2 class="nba-title" id="nbaTitle">Усе важливе під контролем</h2>
+      <p class="nba-why">${icon('checkCircle')}<span>Невиконаних справ, перевірок і нагадувань немає.</span></p>
+      <div class="nba-alt"><button type="button" class="btn btn-glass" data-act="openAdd">${icon('plus')}Додати справу</button></div>
+    </div>`;
   }
-  const primary = na.kind === 'gear' && na.title.startsWith('Усунути') ? 'Відкрити' : PRIMARY[na.kind] || 'Відкрити';
   const blocked = na.kind === 'step' && na.blocked;
-  const canPr = na.kind === 'task' || na.kind === 'must';
-  return `<section class="hero" data-level="${na.level}" data-kind="${na.kind}" aria-labelledby="heroTitle">
-    <div class="hero-top">
-      <span class="eyebrow">Твоя наступна дія</span>
-      ${na.at != null ? `<span class="hero-time">${L.fmtHM(na.at)}</span>` : ''}
-    </div>
-    <div class="hero-main">
-      <span class="hero-ic" aria-hidden="true">${icon(na.icon || 'arrow')}</span>
-      <h2 class="hero-title" id="heroTitle">${esc(na.title)}</h2>
-    </div>
-    <p class="hero-reason">${na.level === 'warn' ? icon('alert') : ''}<span>${esc(na.reason)}</span></p>
-    <button type="button" class="btn btn-primary btn-xl btn-block hero-go" data-act="naDo" data-key="${esc(na.key)}">${icon(na.kind === 'task' || na.kind === 'must' || (na.kind === 'step' && !blocked) ? 'check' : 'arrow')}${blocked ? 'Відкрити крок' : primary}</button>
-    ${na.defer || canPr ? `<div class="hero-alt">
-      ${na.defer ? `<button type="button" class="btn btn-quiet" data-act="naDefer" data-key="${esc(na.key)}">${icon('alarmClock')}Відкласти</button>` : ''}
-      ${canPr ? `<button type="button" class="btn btn-quiet" data-act="naPriority" data-key="${esc(na.key)}">${icon('flag')}Пріоритет</button>` : ''}
+  const primary = blocked ? 'Відкрити крок' : na.kind === 'gear' && na.fix ? 'Відкрити' : PRIMARY[na.kind] || 'Відкрити';
+  const ic = na.kind === 'task' || na.kind === 'must' || (na.kind === 'step' && !blocked) ? 'check' : 'arrow';
+  return `<div class="nba" data-level="${na.level}" data-kind="${na.kind}">
+    <p class="nba-lead"><span>${na.picked ? 'Ви обрали' : 'Зараз найважливіше'}</span>${na.at != null ? `<span class="nba-at">${L.fmtHM(na.at)}</span>` : ''}</p>
+    <h2 class="nba-title" id="nbaTitle">${esc(na.title)}</h2>
+    <p class="nba-why">${icon(na.level === 'warn' ? 'alert' : 'info')}<span>${esc(na.reason)}</span></p>
+    <button type="button" class="btn btn-primary btn-xl btn-block nba-go" data-act="naDo" data-key="${esc(na.key)}">${icon(ic)}${primary}</button>
+    ${na.defer || more ? `<div class="nba-alt">
+      ${na.defer ? `<button type="button" class="btn btn-glass" data-act="naDefer" data-key="${esc(na.key)}">${icon('alarmClock')}Відкласти</button>` : ''}
+      ${more ? `<button type="button" class="btn btn-glass" data-act="naOther">${icon('list')}Обрати іншу</button>` : ''}
     </div>` : ''}
-    ${then ? `<p class="hero-then"><span>Потім</span>${esc(then.title)}</p>` : ''}
+  </div>`;
+}
+
+/* ---------- Пульс дня ---------- */
+
+function pulseLine(p) {
+  const W = 340, H = 50, pad = 8, base = 32;
+  const firsts = [p.nowMin, ...p.events.map((e) => e.m), ...p.beats.map((b) => b.m)];
+  const start = Math.max(0, Math.min(360, Math.floor(Math.min(...firsts) / 60) * 60));
+  const end = 1440;
+  const x = (m) => f1(pad + ((m - start) / (end - start)) * (W - pad * 2));
+  let s = `<line class="pl-axis" x1="${pad}" y1="${base}" x2="${W - pad}" y2="${base}"/>`;
+  s += `<line class="pl-past" x1="${pad}" y1="${base}" x2="${x(p.nowMin)}" y2="${base}"/>`;
+  for (let h = Math.ceil(start / 180) * 3; h <= 24; h += 3) {
+    const xx = x(h * 60);
+    s += `<line class="pl-tick" x1="${xx}" y1="${base + 3}" x2="${xx}" y2="${base + 6}"/>`;
+    if (h < 24) s += `<text class="pl-hour" x="${xx}" y="${H - 2}" text-anchor="middle">${String(h).padStart(2, '0')}</text>`;
+  }
+  for (const b of p.beats) s += `<rect class="pl-beat" data-k="${b.k}" x="${f1(x(b.m) - 1.25)}" y="${base - 15}" width="2.5" height="13" rx="1.25"/>`;
+  for (const e of p.events) {
+    const tone = e.kind === 'task' ? 'task' : 'morning';
+    s += `<circle class="pl-ev pl-${tone}${e.done ? ' done' : ''}" cx="${x(e.m)}" cy="${base}" r="3.4"/>`;
+  }
+  s += `<line class="pl-now" x1="${x(p.nowMin)}" y1="${base - 20}" x2="${x(p.nowMin)}" y2="${base + 4}"/><circle class="pl-now-dot" cx="${x(p.nowMin)}" cy="${base - 20}" r="3"/>`;
+  const beatsTxt = p.beats.length ? `виконано о ${p.beats.slice(-4).map((b) => L.fmtHM(b.m)).join(', ')}` : 'виконаних дій ще немає';
+  const nextTxt = p.next ? `, далі ${L.fmtHM(p.next.t)} ${p.next.title}` : '';
+  return `<svg class="pulse-line" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Ритм дня: ${esc(beatsTxt + nextTxt)}">${s}</svg>`;
+}
+
+export function pulseCard(p) {
+  const label = p.total ? `Виконано ${p.done} з ${p.total} справ, ${p.pct} відсотків` : 'Справ на сьогодні немає';
+  const sig = [];
+  if (p.overdue) sig.push({ tone: 'coral', ic: 'alertCircle', html: `Прострочено <b>${p.overdue}</b>` });
+  if (p.next) sig.push({ tone: 'blue', ic: 'clock', html: `<b>${L.fmtHM(p.next.t)}</b> ${esc(p.next.title)}` });
+  if (p.prioOpen) sig.push({ tone: 'amber', ic: 'flag', html: `Пріоритети в роботі <b>${p.prioOpen}</b>` });
+  if (p.checks) sig.push({ tone: 'teal', ic: 'shieldCheck', html: `Перевірки <b>${p.checks}</b>`, act: 'data-act="tab" data-tab="gear"' });
+  return `<section class="pulse" aria-labelledby="pulseH">
+    <div class="pulse-top">
+      <div class="pulse-ring" role="img" aria-label="${esc(label)}">
+        <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false">${ring({ key: 'pulse', value: p.done, total: p.total, r: 50, w: 9, tone: 'teal' })}</svg>
+        <span class="pulse-pct" aria-hidden="true">${p.pct == null ? '—' : `${p.pct}<small>%</small>`}</span>
+      </div>
+      <div class="pulse-body">
+        <h2 class="pulse-h" id="pulseH">Пульс дня</h2>
+        <p class="pulse-big">${p.total ? `Виконано ${p.done} з ${p.total}` : 'Справ на сьогодні немає'}</p>
+        ${sig.length ? `<ul class="pulse-sig">${sig.slice(0, 3).map((x) => `<li data-tone="${x.tone}">${icon(x.ic)}<span>${x.html}</span></li>`).join('')}</ul>` : '<p class="pulse-quiet">Спокійний день без сигналів</p>'}
+      </div>
+    </div>
+    ${pulseLine(p)}
   </section>`;
 }
 
-/* ---------- DeadlineBar ---------- */
+/* ---------- Шкала строку ---------- */
 
 export function deadlineBar(info) {
   if (!info) return '';
   return `<span class="dl" data-level="${info.level}"><span class="dl-track"><span class="dl-fill" style="--f:${info.frac.toFixed(3)}"></span></span><span class="dl-text">${esc(info.text)}</span></span>`;
 }
 
-/* ---------- PriorityCard ---------- */
+/* ---------- Рядок справи ---------- */
 
-export function priorityCard(t, { today, layer = 'top', flash = '', nowMs = Date.now() } = {}) {
+export function taskRow(t, today, { flash = '', nowMs = Date.now(), showDue = true } = {}) {
+  const done = !!t.doneAt, cancelled = !!t.cancelledAt;
   const pr = L.PR[t.pr];
   const cat = t.cat ? L.TCAT[t.cat] : null;
-  const done = !!t.doneAt;
   const meta = [];
-  if (layer !== 'main') meta.push(`<span class="pr" data-tone="${pr.tone}">${pr.short}</span>`);
-  if (t.rep) meta.push(`<span class="meta-rep">${icon('repeat')}${esc(L.repLabel(t.rep))}</span>`);
-  const sp = L.subProgress(t);
-  if (sp.total) meta.push(`<span>кроки ${sp.done}/${sp.total}</span>`);
-  if (t.moved) meta.push(`<span>перенесено: ${t.moved}</span>`);
-  const info = done ? null : L.deadlineInfo(t, nowMs);
-  return `<article class="pcard${done ? ' is-done' : ''}${flash === t.id ? ' flash' : ''}" data-tone="${pr.tone}" data-layer="${layer}">
-    <button type="button" class="check check-lg${done ? ' on' : ''}" data-tone="${pr.tone}" role="checkbox" aria-checked="${done}" aria-label="${done ? 'Повернути' : 'Виконано'}: ${esc(t.title)}" data-act="toggleTask" data-id="${esc(t.id)}">${icon('check')}</button>
-    <button type="button" class="pcard-main" data-act="openTask" data-id="${esc(t.id)}">
-      <span class="pcard-top">${cat ? `<span class="pcard-cat">${icon(cat.icon)}${esc(cat.name)}</span>` : ''}${layer === 'main' ? `<span class="pr" data-tone="${pr.tone}">${pr.name}</span>` : ''}</span>
-      <span class="pcard-title">${esc(t.title)}</span>
-      ${meta.length ? `<span class="pcard-meta">${meta.join('')}</span>` : ''}
+  if (done) meta.push(`<span>виконано ${L.todayKey(t.doneAt) === today ? `о ${L.fmtHM(L.kyivParts(t.doneAt).min)}` : L.shortDate(L.todayKey(t.doneAt), today)}</span>`);
+  else if (cancelled) meta.push(`<span>скасовано ${L.shortDate(L.todayKey(t.cancelledAt), today)}</span>`);
+  else {
+    meta.push(`<span class="pr" data-tone="${pr.tone}">${pr.short}</span>`);
+    if (showDue && t.due > today) meta.push(`<span>${L.shortDate(t.due, today)}${t.time ? ` о ${t.time}` : ''}</span>`);
+    if (!t.due) meta.push('<span>без дати</span>');
+  }
+  if (cat) meta.push(`<span class="meta-ic">${icon(cat.icon)}${esc(cat.name)}</span>`);
+  if (!done && !cancelled) {
+    if (t.rep) meta.push(`<span class="meta-ic">${icon('repeat')}${esc(L.repLabel(t.rep))}</span>`);
+    const sp = L.subProgress(t);
+    if (sp.total) meta.push(`<span>кроки ${sp.done}/${sp.total}</span>`);
+  }
+  const info = done || cancelled ? null : L.deadlineInfo(t, nowMs);
+  const lead = cancelled
+    ? `<span class="row-lead" aria-hidden="true">${icon('ban')}</span>`
+    : `<button type="button" class="check${done ? ' on' : ''}" data-tone="${pr.tone}" role="checkbox" aria-checked="${done}" aria-label="${done ? 'Повернути в роботу' : 'Виконано'}: ${esc(t.title)}" data-act="toggleTask" data-id="${esc(t.id)}">${icon('check')}</button>`;
+  return `<div class="row trow${done ? ' is-done' : ''}${cancelled ? ' is-cancelled' : ''}${flash === t.id ? ' flash' : ''}" data-tone="${pr.tone}">
+    ${lead}
+    <button type="button" class="row-main" data-act="openTask" data-id="${esc(t.id)}">
+      <span class="row-title">${esc(t.title)}</span>
+      <span class="row-meta">${meta.join('')}</span>
       ${deadlineBar(info)}
     </button>
-    ${layer === 'main' && !done ? `<button type="button" class="pcard-focus" data-act="focusOpen" data-id="${esc(t.id)}" aria-label="Режим «Фокус»">${icon('focus')}</button>` : ''}
-  </article>`;
-}
-
-/* ---------- Timeline: горизонтальна хронологія дня ---------- */
-
-export function dayline(ev, { compact = false } = {}) {
-  const PPM = compact ? 1.25 : 1.5;
-  const W = Math.round((ev.end - ev.start) * PPM);
-  const x = (t) => Math.round((t - ev.start) * PPM);
-  let ticks = '';
-  for (let t = ev.start; t <= ev.end; t += 60) ticks += `<span class="tl-hour" style="left:${x(t)}px">${L.fmtHM(t).slice(0, 2)}</span>`;
-  const lanes = [];
-  const items = ev.events.map((e) => {
-    const px = x(e.t);
-    let lane = 0;
-    while (lanes[lane] !== undefined && lanes[lane] > px - 6) lane++;
-    lanes[lane] = px + 120;
-    const tone = e.kind === 'task' ? L.PR[e.pr].tone : 'amber';
-    const label = `${L.fmtHM(e.t)} ${e.title}${e.done ? ', минуло' : ''}`;
-    const act = e.kind === 'task' ? `data-act="openTask" data-id="${esc(e.id)}"` : 'data-act="tab" data-tab="morning"';
-    return `<button type="button" class="tl-ev${e.done ? ' done' : ''}" data-tone="${tone}" data-lane="${Math.min(lane, 2)}" style="left:${px}px" ${act} role="listitem" aria-label="${esc(label)}">
-      <span class="tl-dot" aria-hidden="true"></span><span class="tl-lbl"><b>${L.fmtHM(e.t)}</b>${esc(e.title)}</span></button>`;
-  }).join('');
-  const lanesUsed = Math.min(3, Math.max(1, lanes.length));
-  return `<div class="dayline" data-lanes="${lanesUsed}" data-now="${x(ev.now)}">
-    <div class="dl-scroll" tabindex="0" aria-label="Хронологія дня">
-      <div class="dl-canvas" style="width:${W}px" role="list">
-        <div class="dl-axis" aria-hidden="true"><span class="dl-past" style="width:${Math.max(0, Math.min(W, x(ev.now)))}px"></span></div>
-        ${ev.now >= ev.start && ev.now <= ev.end ? `<span class="tl-now" style="left:${x(ev.now)}px" aria-hidden="true"><span>${L.fmtHM(ev.now)}</span></span>` : ''}
-        ${ticks}${items}
-      </div>
-    </div>
   </div>`;
 }
 
-export function scrollDaylines(root) {
-  for (const d of root.querySelectorAll('.dayline')) {
-    const sc = d.querySelector('.dl-scroll');
-    if (!sc || sc.dataset.done) continue;
-    sc.dataset.done = '1';
-    sc.scrollLeft = Math.max(0, +d.dataset.now - sc.clientWidth * 0.35);
+/* ---------- Рядок «Не забути» з явним рішенням ---------- */
+
+export function mustRow(m, today, { flash = '', decide = true, nowMs = Date.now() } = {}) {
+  const done = !!m.doneAt, cancelled = !!m.cancelledAt;
+  const open = !done && !cancelled;
+  const parked = open && !!m.returnOn && m.returnOn > today;
+  const meta = [];
+  if (done) meta.push(`виконано ${L.shortDate(L.todayKey(m.doneAt), today)}`);
+  else if (cancelled) meta.push(`скасовано ${L.shortDate(L.todayKey(m.cancelledAt), today)}`);
+  else if (parked) meta.push(`перенесено, повернеться ${L.shortDate(m.returnOn, today)}`);
+  else {
+    const age = Math.max(0, L.diffDays(L.todayKey(m.createdAt), today));
+    meta.push(age === 0 ? 'додано сьогодні' : `у списку ${L.daysWord(age)}`);
   }
+  if (m.note) meta.push(esc(m.note.split('\n')[0].slice(0, 60)));
+  const info = open && !parked ? L.deadlineInfo(m, nowMs, 'must') : null;
+  const t = esc(m.title);
+  return `<div class="row mrow${done ? ' is-done' : ''}${cancelled ? ' is-cancelled' : ''}${parked ? ' is-parked' : ''}${flash === m.id ? ' flash' : ''}">
+    <span class="row-lead mrow-pin" aria-hidden="true">${icon(done ? 'checkCircle' : cancelled ? 'ban' : 'pin')}</span>
+    <div class="mrow-body">
+      <button type="button" class="row-main" data-act="openMust" data-id="${esc(m.id)}">
+        <span class="row-title">${t}</span>
+        <span class="row-meta">${meta.map((x) => `<span>${x}</span>`).join('')}</span>
+        ${deadlineBar(info)}
+      </button>
+    </div>
+    ${open && decide ? `<div class="decide" role="group" aria-label="Рішення: ${t}">
+      <button type="button" class="dbtn" data-tone="teal" data-act="mustDone" data-id="${esc(m.id)}">${icon('check')}<span>Виконати</span></button>
+      <button type="button" class="dbtn" data-act="mustMove" data-id="${esc(m.id)}">${icon('calendarMove')}<span>Перенести</span></button>
+      <button type="button" class="dbtn" data-act="mustCancel" data-id="${esc(m.id)}">${icon('ban')}<span>Скасувати</span></button>
+    </div>` : ''}
+  </div>`;
 }
 
-/* ---------- StatusSegment ---------- */
+/* ---------- Статуси готовності ---------- */
 
-const ST_ICON = { ok: 'checkCircle', issues: 'alertCircle', needs: 'circleDash', running: 'half' };
-const ST_NAME = { ok: 'Без недоліків', issues: 'Є недоліки', needs: 'Потребує перевірки', running: 'Перевірка триває' };
-export function statusBadge(s, text = '') {
-  return `<span class="status" data-s="${s}">${icon(ST_ICON[s])}<span>${esc(text || ST_NAME[s])}</span></span>`;
+export function itemChip(st) {
+  const d = G.ITEM_ST[st.s];
+  return `<span class="st-chip" data-tone="${d.tone}">${icon(d.icon)}<span>${esc(d.name)}</span></span>`;
+}
+export function catChip(s, text = '') {
+  const d = G.STATUS[s];
+  return `<span class="st-chip" data-tone="${d.tone}">${icon(d.icon)}<span>${esc(text || d.short)}</span></span>`;
 }
 
-/* ---------- ChecklistItem ---------- */
+/* ---------- Пункт чекліста ---------- */
 
 export function checklistItem({ id, text, on, act, req = false, meta = '', note = '' }) {
   return `<button type="button" class="cl-item${on ? ' on' : ''}" role="checkbox" aria-checked="${on}" data-act="${act}" data-id="${esc(id)}">
@@ -244,44 +216,62 @@ export function checklistItem({ id, text, on, act, req = false, meta = '', note 
   </button>`;
 }
 
-/* ---------- QuickActionTile ---------- */
+/* ---------- Плитка сценарію ---------- */
 
-export function quickTile({ kind, sc, run = null, count = 0 }) {
+export function quickTile({ kind, sc = null, run = null, count = 0, fav = false }) {
   const k = kind;
-  const steps = sc ? sc.steps.length : count;
+  const steps = sc ? sc.steps.length : 0;
   const req = sc ? sc.steps.filter((s) => s.req).length : 0;
-  const live = run ? `<span class="qt-live">${icon('play')}триває</span>` : '';
-  return `<button type="button" class="qtile" data-tone="${k.tone}" data-act="deckOpen" data-kind="${k.id}"${sc ? ` data-id="${esc(sc.id)}"` : ''} aria-label="${esc(k.name)}. ${esc(k.desc)}">
-    <span class="qt-glow" aria-hidden="true"></span>
-    <span class="qt-ic">${icon(k.icon)}</span>
+  let foot;
+  if (k.id === 'task') foot = 'Швидка форма';
+  else if (k.id === 'custom' && !sc) foot = count ? `${count} ${L.plural(count, ['сценарій', 'сценарії', 'сценаріїв'])}` : 'Створити';
+  else foot = `${steps} ${L.plural(steps, ['крок', 'кроки', 'кроків'])}${req ? `, обовʼязкових ${req}` : ''}`;
+  return `<button type="button" class="qtile" data-tone="${k.tone}" data-act="deckOpen" data-kind="${k.id}"${sc ? ` data-id="${esc(sc.id)}"` : ''} aria-label="${esc(sc && k.id !== 'custom' ? sc.title : k.name)}. ${esc(k.desc)}${run ? '. Триває' : ''}${fav ? '. В обраному' : ''}">
+    <span class="qt-ic" aria-hidden="true">${icon(k.icon)}</span>
     <span class="qt-title">${esc(sc && k.id !== 'custom' ? sc.title : k.name)}</span>
     <span class="qt-desc">${esc(k.desc)}</span>
-    <span class="qt-foot">${k.id === 'custom' && !sc ? `${count ? `${count} ${L.plural(count, ['сценарій', 'сценарії', 'сценаріїв'])}` : 'Створити'}` : `${steps} ${L.plural(steps, ['крок', 'кроки', 'кроків'])}${req ? ` · ${req} обовʼяз.` : ''}`}${live}</span>
+    <span class="qt-foot">${foot}${run ? `<span class="qt-live">${icon('play')}триває</span>` : ''}${fav ? `<span class="qt-fav" aria-hidden="true">${icon('star')}</span>` : ''}</span>
   </button>`;
 }
 
-/* ---------- ModeSwitcher ---------- */
+/* ---------- Режим дня ---------- */
 
 export function modeChip(mi) {
   const m = L.MODE[mi.id];
-  return `<button type="button" class="mode-chip" data-tone="${m.tone}" data-act="openMode" aria-label="Режим: ${esc(m.name)}${mi.manual ? '' : ', автоматично'}. Змінити">
+  return `<button type="button" class="mode-chip" data-tone="${m.tone}" data-act="openMode" aria-label="Режим дня: ${esc(m.name)}${mi.manual ? '' : ', автоматично'}. Змінити">
     <span class="mode-dot" aria-hidden="true"></span><span>${esc(m.name)}</span>${mi.manual ? '' : '<span class="mode-auto">авто</span>'}${icon('down')}
   </button>`;
 }
 
-/* ---------- EmptyState / ErrorState ---------- */
+/* ---------- Заголовок на зображенні ---------- */
 
-export function emptyState({ ic = 'check', title, text = '', action = '' }) {
-  return `<div class="empty"><span class="empty-ic">${icon(ic)}</span><p class="empty-t">${esc(title)}</p>${text ? `<p class="empty-x">${esc(text)}</p>` : ''}${action}</div>`;
+export function photoHead({ title, sub = '', extra = '' }) {
+  return `<header class="ph">
+    <div class="ph-text"><h1 class="ph-title" data-title-anchor>${esc(title)}</h1>${sub ? `<p class="ph-sub">${sub}</p>` : ''}</div>
+    ${extra}
+  </header>`;
 }
 
-export function errorState({ title = 'Щось пішло не так', text = 'Дані в безпеці — помилка стосується лише показу цього екрана.', detail = '' } = {}) {
+/* ---------- Порожні стани й помилки ---------- */
+
+// Ілюстрації декоративні (alt=""): увесь зміст — у тексті поруч.
+export function emptyState({ ic = 'check', img = '', title, text = '', action = '' }) {
+  if (img) {
+    return `<div class="empty has-img">
+      <div class="empty-fig" aria-hidden="true"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>
+      <div class="empty-body"><p class="empty-t">${esc(title)}</p>${text ? `<p class="empty-x">${esc(text)}</p>` : ''}${action}</div>
+    </div>`;
+  }
+  return `<div class="empty"><span class="empty-ic" aria-hidden="true">${icon(ic)}</span><p class="empty-t">${esc(title)}</p>${text ? `<p class="empty-x">${esc(text)}</p>` : ''}${action}</div>`;
+}
+
+export function errorState({ title = 'Не вдалося показати екран', text = 'Дані в безпеці: помилка стосується лише показу цього екрана.', detail = '' } = {}) {
   return `<div class="error-state" role="alert">
-    <span class="empty-ic">${icon('alert')}</span>
+    <span class="empty-ic" aria-hidden="true">${icon('alert')}</span>
     <p class="empty-t">${esc(title)}</p>
     <p class="empty-x">${esc(text)}</p>
     ${detail ? `<p class="err-detail">${esc(detail)}</p>` : ''}
-    <div class="row2"><button type="button" class="btn btn-tinted" data-act="tab" data-tab="home">${icon('orb')}На головну</button><button type="button" class="btn btn-quiet" data-act="reload">${icon('reset')}Оновити</button></div>
+    <div class="row2"><button type="button" class="btn btn-tinted" data-act="tab" data-tab="home">${icon('sun')}На головну</button><button type="button" class="btn btn-quiet" data-act="reload">${icon('reset')}Оновити</button></div>
   </div>`;
 }
 

@@ -1,45 +1,51 @@
-// ОПОРА 365 — основна логіка без DOM: ранок, справи, режими, наступна дія, дані.
-// Модуль використовують і застосунок, і тести (tests.js).
+// ОПОРА 365 — основна логіка без DOM: ранок, справи, «Не забути», режими, наступна дія,
+// пульс дня, вечірній підсумок, дані. Модуль використовують і застосунок, і тести (tests.js).
 import {
   DAY, parseHM, fmtHM, fmtDur, todayKey, dayNum, dateFromNum, addDays, diffDays, isKey,
   localMin, minOfDay, keyOfLocal, localAt, weekday, shortDate, plural, count, daysWord, relIn, uid, WD_S,
 } from './time.js';
-import { defaultGear, cleanGear, gearSummary, checkProgress, CAT as GCAT } from './logic-gear.js';
+import { defaultGear, cleanGear, gearSummary } from './logic-gear.js';
 import { defaultDeck, cleanDeck, defaultTools, cleanTools, runProgress } from './logic-deck.js';
 
 export * from './time.js';
 
-export const SCHEMA = 2;
-export const GRACE = 120; // скільки хвилин після часу виходу план ще вважається «сьогоднішнім»
+export const SCHEMA = 3;
+export const GRACE = 120; // скільки хвилин після виходу план ще вважається «сьогоднішнім»
+export const ARCHIVE_DAYS = 180;
+export const ARCHIVE_MAX = 1500;
 
 export const PRIORITIES = [
-  { id: 1, name: 'Обовʼязково сьогодні', short: 'Обовʼязково', tone: 'coral' },
-  { id: 2, name: 'Важливо', short: 'Важливо', tone: 'amber' },
+  { id: 1, name: 'Обовʼязково сьогодні', short: 'Обовʼязково', tone: 'amber' },
+  { id: 2, name: 'Важливо', short: 'Важливо', tone: 'blue' },
   { id: 3, name: 'Можна пізніше', short: 'Пізніше', tone: 'slate' },
 ];
 export const PR = Object.fromEntries(PRIORITIES.map((p) => [p.id, p]));
 export const TRANSPORT = [
-  { id: 'bus', name: 'Автобус' },
-  { id: 'car', name: 'Авто' },
-  { id: 'taxi', name: 'Таксі' },
-  { id: 'walk', name: 'Пішки' },
+  { id: 'bus', name: 'Автобус', icon: 'bus' },
+  { id: 'car', name: 'Авто', icon: 'car' },
+  { id: 'taxi', name: 'Таксі', icon: 'taxi' },
+  { id: 'walk', name: 'Пішки', icon: 'walk' },
+  { id: 'none', name: 'Без дороги', icon: 'home' },
 ];
-export const BUFFERS = [10, 15, 20];
+export const TR = Object.fromEntries(TRANSPORT.map((t) => [t.id, t]));
+export const BUFFERS = [0, 5, 10, 15, 20, 30];
 export const TASK_CATS = [
-  { id: 'work', name: 'Служба', icon: 'briefcase' },
-  { id: 'docs', name: 'Документи', icon: 'file' },
-  { id: 'train', name: 'Заняття', icon: 'book' },
-  { id: 'home', name: 'Дім', icon: 'home' },
+  { id: 'work', name: 'Робота', icon: 'briefcase' },
+  { id: 'family', name: 'Сімʼя', icon: 'users' },
   { id: 'self', name: 'Особисте', icon: 'user' },
-  { id: 'buy', name: 'Покупки', icon: 'bag' },
+  { id: 'money', name: 'Фінанси', icon: 'wallet' },
+  { id: 'home', name: 'Побут', icon: 'home' },
+  { id: 'study', name: 'Навчання', icon: 'book' },
   { id: 'health', name: 'Здоровʼя', icon: 'heart' },
 ];
 export const TCAT = Object.fromEntries(TASK_CATS.map((c) => [c.id, c]));
+// Категорії попередньої версії → нові.
+const CAT_V2 = { docs: 'work', train: 'study', buy: 'home' };
 export const MODES = [
   { id: 'morning', name: 'Ранок', icon: 'sunrise', tone: 'amber', hint: 'Підготовка і вихід' },
-  { id: 'day', name: 'Сьогодні', icon: 'sun', tone: 'blue', hint: 'Справи за пріоритетами' },
-  { id: 'ready', name: 'Готовність', icon: 'shieldCheck', tone: 'teal', hint: 'Екіпірування і сценарії' },
-  { id: 'rest', name: 'Відпочинок', icon: 'moon', tone: 'moon', hint: 'Лише важливе й план на завтра' },
+  { id: 'day', name: 'День', icon: 'sun', tone: 'blue', hint: 'Справи за пріоритетами' },
+  { id: 'ready', name: 'Готовність', icon: 'shieldCheck', tone: 'teal', hint: 'Перевірки і сценарії на першому місці' },
+  { id: 'rest', name: 'Відпочинок', icon: 'moon', tone: 'moon', hint: 'Лише важливе й підсумок дня' },
 ];
 export const MODE = Object.fromEntries(MODES.map((m) => [m.id, m]));
 export const REPEATS = [
@@ -50,45 +56,79 @@ export const REPEATS = [
   { id: 'monthly', name: 'Щомісяця' },
 ];
 
-/* ---------- Стан за замовчуванням ---------- */
+/* ---------- Ранкові шаблони ---------- */
 
+export const TPL_KINDS = [
+  { id: 'work', name: 'Робочий день', icon: 'briefcase' },
+  { id: 'study', name: 'Навчання', icon: 'book' },
+  { id: 'duty', name: 'Чергування', icon: 'shieldCheck' },
+  { id: 'off', name: 'Вихідний', icon: 'sun' },
+  { id: 'road', name: 'Дорога', icon: 'car' },
+  { id: 'custom', name: 'Власний шаблон', icon: 'layers' },
+];
+export const TPL_KIND = Object.fromEntries(TPL_KINDS.map((k) => [k.id, k]));
+export const BUILTIN_TPL = ['work', 'study', 'duty', 'off', 'road'];
+export const TPL_CUSTOM_MAX = 6;
+export const ESS_DEFAULT = ['Документи', 'Телефон', 'Ключі', 'Гаманець або картка', 'Павербанк і кабель'];
+
+const TRAVEL = { bus: 40, car: 25, taxi: 20, walk: 35, none: 0 };
 function mkStep(title, min, short, extra = {}) {
   return { id: uid(), title, min, short, critical: false, items: [], kind: '', ...extra };
 }
-export function defaultSteps() {
-  return [
-    mkStep('Прокинутися', 5, 2),
-    mkStep('Гігієна', 15, 7),
-    mkStep('Сніданок і вода', 15, 3),
-    mkStep('Особисті речі', 10, 5),
-    mkStep('Документи, телефон, заряд', 5, 5, { critical: true, items: ['Документи', 'Телефон заряджений', 'Павербанк і кабель', 'Ключі'] }),
-    mkStep('Перевірка завдань', 5, 1, { kind: 'tasks' }),
-    mkStep('Одягнутися й вийти', 5, 5),
-  ];
+const TPL = {
+  work: { arrival: '08:30', transport: 'bus', buffer: 15, steps: () => [mkStep('Прокинутися', 5, 2), mkStep('Гігієна', 15, 7), mkStep('Сніданок і вода', 15, 3), mkStep('Особисті речі', 10, 5), mkStep('Перевірка справ', 5, 1, { kind: 'tasks' }), mkStep('Одягнутися й вийти', 5, 5)] },
+  study: { arrival: '09:00', transport: 'bus', buffer: 15, steps: () => [mkStep('Прокинутися', 5, 2), mkStep('Гігієна', 15, 7), mkStep('Сніданок і вода', 15, 5), mkStep('Конспекти й матеріали', 10, 5), mkStep('Перевірка справ', 5, 1, { kind: 'tasks' }), mkStep('Одягнутися й вийти', 5, 5)] },
+  duty: { arrival: '07:30', transport: 'bus', buffer: 20, steps: () => [mkStep('Прокинутися', 5, 2), mkStep('Гігієна', 10, 5), mkStep('Сніданок і вода', 15, 5), mkStep('Форма й екіпірування', 15, 15, { critical: true, kind: 'gear' }), mkStep('Перевірка справ', 5, 1, { kind: 'tasks' }), mkStep('Вихід', 5, 5)] },
+  off: { arrival: '10:00', transport: 'none', buffer: 0, steps: () => [mkStep('Прокинутися без поспіху', 10, 5), mkStep('Гігієна', 15, 10), mkStep('Сніданок', 30, 15), mkStep('Справи на день', 5, 2, { kind: 'tasks' })] },
+  road: { arrival: '12:00', transport: 'car', buffer: 20, travel: { car: 180, bus: 240, taxi: 180 }, steps: () => [mkStep('Прокинутися', 5, 2), mkStep('Гігієна', 15, 7), mkStep('Сніданок і вода', 15, 5), mkStep('Речі в дорогу', 15, 10, { items: ['Документи', 'Зарядки', 'Вода', 'Аптечка'] }), mkStep('Перевірка справ', 5, 1, { kind: 'tasks' }), mkStep('Вихід', 5, 5)] },
+};
+
+export function defaultTemplate(kind = 'work') {
+  const k = TPL[kind] ? kind : 'work';
+  const d = TPL[k];
+  return { id: `tpl-${k}`, kind: k, name: TPL_KIND[k].name, arrival: d.arrival, transport: d.transport, travel: { ...TRAVEL, ...(d.travel || {}) }, buffer: d.buffer, steps: d.steps() };
 }
+export const defaultSteps = (kind = 'work') => defaultTemplate(kind).steps;
+
+export function defaultMorning() {
+  return { active: 'tpl-work', templates: BUILTIN_TPL.map(defaultTemplate), essentials: ESS_DEFAULT.map((t) => ({ id: uid(), t })) };
+}
+
+/* ---------- Стан за замовчуванням ---------- */
+
 export function defaultSettings() {
-  return { theme: 'dark', lastBackupAt: 0, installHint: true, name: '', mode: { id: 'auto', until: 0 }, restAt: '21:00', haptics: true };
+  return { theme: 'dark', lastBackupAt: 0, installHint: true, name: '', mode: { id: 'auto', until: 0 }, restAt: '21:00', haptics: true, onboarded: false };
 }
 export function defaultState() {
   return {
     v: SCHEMA,
     updatedAt: 0,
     settings: defaultSettings(),
-    morning: { arrival: '08:30', transport: 'bus', travel: { bus: 40, car: 25, taxi: 20, walk: 35 }, buffer: 15, steps: defaultSteps() },
+    morning: defaultMorning(),
     session: null,
     tasks: [],
     musts: [],
     pin: { id: '', date: '' },
+    pick: { key: '', date: '' },
     later: {},
     gear: defaultGear(),
     deck: defaultDeck(),
     tools: defaultTools(),
+    focus: null,
+    days: {},
   };
 }
 
-/* ---------- Ранковий план ---------- */
+/* ---------- Ранок: план, сесія, «Вихід без забутого» ---------- */
 
-export const travelOf = (m) => m.travel[m.transport] ?? 0;
+export function tplById(state, id) {
+  const list = state.morning.templates;
+  return list.find((t) => t.id === id) || list[0];
+}
+export const currentTpl = (state) => tplById(state, state.morning.active);
+export const homeDay = (m) => m.transport === 'none';
+export const endLabel = (m) => (homeDay(m) ? 'Початок дня' : 'Вихід');
+export const travelOf = (m) => (homeDay(m) ? 0 : m.travel[m.transport] ?? 0);
 export const effDur = (s, short) => (short && !s.critical ? s.short : s.min);
 
 // Вихід = прибуття − дорога − запас; підйом = вихід − сума кроків.
@@ -114,18 +154,25 @@ export function planTarget(m, nowLocal) {
   return dateFromNum(n * DAY + dep + GRACE >= nowLocal ? n : n + 1);
 }
 
-export function newSession(m, nowMs) {
-  return { date: planTarget(m, localMin(nowMs)), startedAt: nowMs, done: {}, skipped: {}, checks: {}, short: false, finishedAt: 0 };
+export function newSession(state, nowMs) {
+  const tpl = currentTpl(state);
+  return { date: planTarget(tpl, localMin(nowMs)), tpl: tpl.id, startedAt: nowMs, done: {}, skipped: {}, checks: {}, short: false, finishedAt: 0, ess: {} };
 }
 
 export function activeSession(state, nowLocal) {
   const s = state.session;
   if (!s) return null;
-  return dayNum(s.date) * DAY + computePlan(state.morning).departure + GRACE >= nowLocal ? s : null;
+  return dayNum(s.date) * DAY + computePlan(tplById(state, s.tpl)).departure + GRACE >= nowLocal ? s : null;
+}
+
+// Шаблон, за яким зараз рахується ранок: сесії, що триває, або обраний.
+export function planTpl(state, nowLocal = localMin()) {
+  const s = activeSession(state, nowLocal);
+  return s ? tplById(state, s.tpl) : currentTpl(state);
 }
 
 function walk(state, session, short, now) {
-  const plan = computePlan(state.morning, short);
+  const plan = computePlan(tplById(state, session.tpl), short);
   const lastMs = Math.max(session.startedAt, ...Object.values(session.done).map(Number));
   const elapsed = now - localMin(lastMs);
   const rows = [];
@@ -157,10 +204,18 @@ export function sessionStatus(state, session, nowMs) {
   let level = 'ok';
   if (spare < 0) level = !short && altSpare >= 0 ? 'tight' : 'late';
   const counted = main.rows.filter((r) => r.state !== 'auto');
+  const ess = state.morning.essentials;
+  const essDone = ess.filter((e) => session.ess?.[e.id]).length;
+  const finished = !main.current;
+  const complete = finished && essDone === ess.length;
   return {
     ...main, depAt, toDep, spare, altSpare, level, short,
     expected: now + main.remaining,
-    finished: !main.current,
+    finished,
+    complete,
+    needEss: finished && !complete,
+    essDone,
+    essTotal: ess.length,
     doneCount: counted.filter((r) => r.state === 'done' || r.state === 'skipped').length,
     count: counted.length,
     index: main.current ? counted.findIndex((r) => r.id === main.current.id) + 1 : counted.length,
@@ -170,16 +225,17 @@ export function sessionStatus(state, session, nowMs) {
 // Короткий підсумок ранку для головного екрана.
 export function morningSummary(state, nowMs) {
   const now = localMin(nowMs);
-  const plan = computePlan(state.morning);
   const session = activeSession(state, now);
-  const date = session ? session.date : planTarget(state.morning, now);
+  const tpl = session ? tplById(state, session.tpl) : currentTpl(state);
+  const plan = computePlan(tpl);
+  const date = session ? session.date : planTarget(tpl, now);
   const base = dayNum(date) * DAY;
   const wakeAt = base + plan.wake, depAt = base + plan.departure;
   let phase = 'before';
   if (session) phase = session.finishedAt ? 'finished' : 'running';
   else if (now >= depAt) phase = 'after';
   else if (now >= wakeAt) phase = 'window';
-  return { plan, date, rel: dayNum(date) - Math.floor(now / DAY), wakeAt, depAt, now, phase, session, toWake: wakeAt - now, toDep: depAt - now };
+  return { tpl, plan, date, rel: dayNum(date) - Math.floor(now / DAY), wakeAt, depAt, now, phase, session, toWake: wakeAt - now, toDep: depAt - now };
 }
 
 export function moveItem(list, id, dir) {
@@ -193,36 +249,39 @@ export function moveItem(list, id, dir) {
 /* ---------- Справи ---------- */
 
 export const normTitle = (s) => String(s).toLowerCase().replace(/[’'ʼ`"«».,!?;:()\-–—]/g, ' ').replace(/\s+/g, ' ').trim();
+export const isOpen = (x) => !x.doneAt && !x.cancelledAt;
 
 export function findDuplicate(list, title, exceptId = '') {
   const n = normTitle(title);
-  return n ? list.find((t) => !t.doneAt && t.id !== exceptId && normTitle(t.title) === n) || null : null;
+  return n ? list.find((t) => isOpen(t) && t.id !== exceptId && normTitle(t.title) === n) || null : null;
 }
 
 export function newTask(title, pr, due, nowMs = Date.now(), extra = {}) {
   const id = uid();
   return {
-    id, title: String(title).trim().slice(0, 300), pr, due, time: '', cat: '', note: '', sub: [], rep: null, sid: id, next: '',
-    createdAt: nowMs, doneAt: 0, moved: 0, ...extra,
+    id, title: String(title).trim().slice(0, 300), pr, due, time: '', deadline: '', cat: '', note: '', sub: [], rep: null, sid: id, next: '',
+    createdAt: nowMs, doneAt: 0, cancelledAt: 0, moved: 0, ...extra,
   };
 }
 
-// Перенесення на наступний день: та сама справа, без копії.
-export function postpone(task, today) {
-  const base = task.due > today ? task.due : today;
-  return { ...task, due: addDays(base, 1), moved: (task.moved || 0) + 1 };
+// Перенесення: та сама справа на новий день, без копії. Дедлайн не змінюється.
+export function postpone(task, today, to = '') {
+  const base = task.due && task.due > today ? task.due : today;
+  return { ...task, due: isKey(to) ? to : addDays(base, 1), moved: (task.moved || 0) + 1 };
 }
 
 const cmpKey = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const timeOrder = (t) => (t.time ? parseHM(t.time) ?? DAY : DAY);
-export const byTask = (a, b) => a.pr - b.pr || cmpKey(a.due, b.due) || timeOrder(a) - timeOrder(b) || a.createdAt - b.createdAt;
+const dlKey = (t) => t.deadline || '9999-12-31';
+export const byTask = (a, b) => a.pr - b.pr || cmpKey(dlKey(a), dlKey(b)) || cmpKey(a.due, b.due) || timeOrder(a) - timeOrder(b) || a.createdAt - b.createdAt;
 
 export function taskView(tasks, today, pin = null) {
-  const open = tasks.filter((t) => !t.doneAt);
-  const overdue = open.filter((t) => t.due < today).sort(byTask);
+  const open = tasks.filter(isOpen);
+  const overdue = open.filter((t) => t.due && t.due < today).sort(byTask);
   const todays = open.filter((t) => t.due === today).sort(byTask);
   const upcoming = open.filter((t) => t.due > today).sort((a, b) => cmpKey(a.due, b.due) || a.pr - b.pr || timeOrder(a) - timeOrder(b) || a.createdAt - b.createdAt);
-  const doneToday = tasks.filter((t) => t.doneAt && todayKey(t.doneAt) === today).sort((a, b) => b.doneAt - a.doneAt);
+  const nodate = open.filter((t) => !t.due).sort((a, b) => a.pr - b.pr || cmpKey(dlKey(a), dlKey(b)) || a.createdAt - b.createdAt);
+  const doneToday = tasks.filter((t) => t.doneAt && !t.cancelledAt && todayKey(t.doneAt) === today).sort((a, b) => b.doneAt - a.doneAt);
   const ordered = [...overdue, ...todays].sort(byTask);
   let main = ordered[0] || null;
   if (pin && pin.date === today) {
@@ -231,12 +290,27 @@ export function taskView(tasks, today, pin = null) {
   }
   const rest = ordered.filter((t) => t !== main);
   return {
-    overdue, today: todays, upcoming, doneToday, ordered,
+    overdue, today: todays, upcoming, nodate, doneToday, ordered,
     main, top: rest.slice(0, 3), more: rest.slice(3),
     focus: ordered.slice(0, 3),
     groups: PRIORITIES.map((p) => ({ ...p, items: todays.filter((t) => t.pr === p.id) })),
     openCount: ordered.length,
   };
+}
+
+export function matches(item, q = '', cat = '') {
+  if (cat && item.cat !== cat) return false;
+  const n = normTitle(q);
+  if (!n) return true;
+  return normTitle(item.title).includes(n) || normTitle(item.note || '').includes(n) || (item.sub || []).some((s) => normTitle(s.t).includes(n));
+}
+
+// Архів: виконане й скасоване, найновіше першим.
+export function archiveView(state, q = '', cat = '') {
+  const pack = (type) => (x) => ({ type, x, at: x.doneAt || x.cancelledAt, how: x.doneAt ? 'done' : 'cancel' });
+  const tasks = state.tasks.filter((t) => !isOpen(t) && matches(t, q, cat)).map(pack('task'));
+  const musts = cat ? [] : state.musts.filter((m) => !isOpen(m) && matches(m, q)).map(pack('must'));
+  return [...tasks, ...musts].sort((a, b) => b.at - a.at);
 }
 
 /* ---------- Повторювані справи ---------- */
@@ -280,6 +354,7 @@ export function repLabel(rep) {
 }
 
 export function makeRep(k, due, days = []) {
+  if (!due) return null;
   if (k === 'daily' || k === 'weekdays') return { k };
   if (k === 'weekly') return { k, days: days.length ? [...new Set(days)].filter((d) => d >= 0 && d <= 6).sort() : [weekday(due)] };
   if (k === 'monthly') return { k, dom: +due.slice(8) };
@@ -289,11 +364,11 @@ export function makeRep(k, due, days = []) {
 // Виконати справу. Для повторюваної — створюється наступна, якщо її ще немає.
 export function completeTask(state, id, nowMs = Date.now()) {
   const t = state.tasks.find((x) => x.id === id);
-  if (!t || t.doneAt) return null;
+  if (!t || t.doneAt || t.cancelledAt) return null;
   t.doneAt = nowMs;
   let spawned = null;
   if (t.rep) {
-    const exists = state.tasks.some((x) => !x.doneAt && x.sid === t.sid && x.id !== t.id);
+    const exists = state.tasks.some((x) => isOpen(x) && x.sid === t.sid && x.id !== t.id);
     if (!exists) {
       const today = todayKey(nowMs);
       const due = nextDue(t.rep, t.due > today ? t.due : today);
@@ -315,9 +390,25 @@ export function undoTask(state, id) {
   t.doneAt = 0;
   if (t.next) {
     const n = state.tasks.find((x) => x.id === t.next);
-    if (n && !n.doneAt && !n.moved) state.tasks = state.tasks.filter((x) => x !== n);
+    if (n && isOpen(n) && !n.moved) state.tasks = state.tasks.filter((x) => x !== n);
     t.next = '';
   }
+}
+
+export function cancelTask(state, id, nowMs = Date.now()) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t || !isOpen(t)) return false;
+  t.cancelledAt = nowMs;
+  if (state.pin.id === id) state.pin = { id: '', date: '' };
+  return true;
+}
+
+// Повернути з архіву: справа знову в роботі.
+export function restoreTask(state, id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t) return;
+  if (t.doneAt) undoTask(state, id);
+  t.cancelledAt = 0;
 }
 
 export function subProgress(t) {
@@ -325,50 +416,70 @@ export function subProgress(t) {
   return { done, total: t.sub.length, next: t.sub.find((s) => !s.d) || null };
 }
 
-// Шкала дедлайну: яка частка часу до строку вже минула (реальні дані, не прикраса).
+const SEV = { normal: 0, soon: 1, late: 2 };
+
+// Шкала строку: яка частка часу вже минула (реальні дані, не прикраса).
 export function deadlineInfo(item, nowMs = Date.now(), kind = 'task') {
   const now = localMin(nowMs);
   const today = keyOfLocal(now);
-  if (item.doneAt) return null;
+  if (item.doneAt || item.cancelledAt) return null;
   const created = localMin(item.createdAt || nowMs);
+  const toward = (key) => {
+    const end = localAt(key, DAY);
+    return Math.min(1, Math.max(0, (now - created) / Math.max(1, end - created)));
+  };
   if (kind === 'must') {
     if (!item.deadline) return null;
-    const end = localAt(item.deadline, DAY);
     const left = diffDays(today, item.deadline);
-    const frac = Math.min(1, Math.max(0, (now - created) / Math.max(1, end - created)));
+    const frac = toward(item.deadline);
     if (left < 0) return { frac: 1, level: 'late', text: `строк минув ${daysWord(-left)} тому` };
     if (left === 0) return { frac, level: 'soon', text: 'строк — сьогодні' };
     if (left === 1) return { frac, level: 'soon', text: 'строк — завтра' };
-    return { frac, level: 'normal', text: `до ${shortDate(item.deadline, today)} · ще ${daysWord(left)}` };
+    return { frac, level: 'normal', text: `до ${shortDate(item.deadline, today)} (ще ${daysWord(left)})` };
   }
-  if (item.due < today) {
+  let due = null;
+  if (item.due && item.due < today) {
     const n = diffDays(item.due, today);
-    return { frac: 1, level: 'late', text: n === 1 ? 'прострочено з учора' : `прострочено ${daysWord(n)}` };
+    due = { frac: 1, level: 'late', text: n === 1 ? 'прострочено з учора' : `прострочено ${daysWord(n)}` };
+  } else if (item.due === today) {
+    const at = item.time ? localAt(today, parseHM(item.time)) : localAt(today, DAY);
+    const start = Math.min(Math.max(created, localAt(today, 0)), at - 1);
+    const frac = Math.min(1, Math.max(0, (now - start) / Math.max(1, at - start)));
+    if (item.time) due = now > at ? { frac: 1, level: 'late', text: `мало бути о ${item.time}` } : { frac, level: at - now <= 60 ? 'soon' : 'normal', text: `о ${item.time}, ${relIn(at - now)}`, at };
+    else due = { frac, level: frac > 0.8 ? 'soon' : 'normal', text: 'до кінця дня' };
   }
-  if (item.due > today) return null;
-  const at = item.time ? localAt(today, parseHM(item.time)) : localAt(today, DAY);
-  const start = Math.min(Math.max(created, localAt(today, 0)), at - 1);
-  const frac = Math.min(1, Math.max(0, (now - start) / Math.max(1, at - start)));
-  if (item.time) {
-    if (now > at) return { frac: 1, level: 'late', text: `мало бути о ${item.time}` };
-    return { frac, level: at - now <= 60 ? 'soon' : 'normal', text: `о ${item.time} · ${relIn(at - now)}`, at };
+  if (item.deadline) {
+    const left = diffDays(today, item.deadline);
+    const frac = toward(item.deadline);
+    let d;
+    if (left < 0) d = { frac: 1, level: 'late', text: left === -1 ? 'дедлайн минув учора' : `дедлайн минув ${daysWord(-left)} тому` };
+    else if (left === 0) d = { frac, level: 'soon', text: 'дедлайн сьогодні' };
+    else if (left === 1) d = { frac, level: 'soon', text: 'дедлайн завтра' };
+    else d = { frac, level: 'normal', text: `дедлайн ${shortDate(item.deadline, today)}` };
+    if (!due || SEV[d.level] > SEV[due.level]) return d;
   }
-  return { frac, level: frac > 0.8 ? 'soon' : 'normal', text: 'до кінця дня' };
+  return due;
 }
 
-/* ---------- Обовʼязкові справи (не зникають до виконання) ---------- */
+/* ---------- «Не забути»: на виду, доки не ухвалено рішення ---------- */
 
 export function newMust(title, deadline = '', nowMs = Date.now()) {
-  return { id: uid(), title: String(title).trim().slice(0, 300), note: '', deadline, createdAt: nowMs, doneAt: 0 };
+  return { id: uid(), title: String(title).trim().slice(0, 300), note: '', deadline, createdAt: nowMs, doneAt: 0, cancelledAt: 0, returnOn: '', moved: 0 };
 }
 
 export function mustView(musts, today) {
   const open = musts
-    .filter((m) => !m.doneAt)
-    .map((m) => ({ ...m, age: Math.max(0, diffDays(todayKey(m.createdAt), today)), left: m.deadline ? diffDays(today, m.deadline) : null }))
-    .sort((a, b) => (a.left ?? 1e9) - (b.left ?? 1e9) || a.createdAt - b.createdAt);
+    .filter(isOpen)
+    .map((m) => ({ ...m, age: Math.max(0, diffDays(todayKey(m.createdAt), today)), left: m.deadline ? diffDays(today, m.deadline) : null, parked: !!m.returnOn && m.returnOn > today }))
+    .sort((a, b) => a.parked - b.parked || (a.parked ? cmpKey(a.returnOn, b.returnOn) : 0) || (a.left ?? 1e9) - (b.left ?? 1e9) || a.createdAt - b.createdAt);
   const done = musts.filter((m) => m.doneAt).sort((a, b) => b.doneAt - a.doneAt);
-  return { open, done };
+  const cancelled = musts.filter((m) => m.cancelledAt && !m.doneAt).sort((a, b) => b.cancelledAt - a.cancelledAt);
+  return { open, active: open.filter((m) => !m.parked), parked: open.filter((m) => m.parked), done, cancelled };
+}
+
+// Явне рішення «Перенести»: справа лишається у списку, але повертається до уваги з обраної дати.
+export function moveMust(m, date) {
+  return { ...m, returnOn: isKey(date) ? date : '', moved: (m.moved || 0) + 1 };
 }
 
 /* ---------- Режими дня ---------- */
@@ -411,11 +522,13 @@ export function deferTomorrow(state, key, nowMs = Date.now()) {
   state.later[key] = (Math.floor(now / DAY) + 1) * DAY + 240;
 }
 
-/* ---------- Наступна дія ---------- */
+/* ---------- Наступна дія: детермінований і прозорий порядок ---------- */
+// Порядок: ранок, що триває → події найближчої години → обране вами → прострочені строки →
+// «Обовʼязково» → «Не забути» зі строком → «Важливо» → перевірки → «Пізніше». Режим дня зсуває акценти.
 
 const ORDER_MAX = 1e12;
+const sentence = (parts) => { const s = parts.filter(Boolean).join(', '); return s.charAt(0).toUpperCase() + s.slice(1); };
 
-// Усі кандидати на «Твою наступну дію» з причиною пріоритетності. Лише реальні дані.
 export function candidates(state, nowMs = Date.now(), modeId = '') {
   const now = localMin(nowMs);
   const today = keyOfLocal(now);
@@ -425,20 +538,23 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
 
   // Ранок
   const sm = morningSummary(state, nowMs);
+  const end = endLabel(sm.tpl).toLowerCase();
   if (sm.phase === 'running') {
     const st = sessionStatus(state, sm.session, nowMs);
     const c = st.current;
     if (c) {
-      const reason = st.level === 'ok' ? `Ранок · крок ${st.index} із ${st.count} · вихід о ${fmtHM(st.plan.departure)}`
-        : st.level === 'tight' ? `Часу обмаль: бракує ${fmtDur(-st.spare)}` : `Пізніше на ${fmtDur(-st.spare)} · вихід о ${fmtHM(st.plan.departure)}`;
+      const reason = st.level === 'ok' ? `Крок ${st.index} із ${st.count}, ${end} о ${fmtHM(st.plan.departure)}`
+        : st.level === 'tight' ? `Часу обмаль: бракує ${fmtDur(-st.spare)}` : `Запізнення на ${fmtDur(-st.spare)}, ${end} о ${fmtHM(st.plan.departure)}`;
       out.push({ key: `step:${c.id}`, kind: 'step', id: c.id, rank: 10, title: c.title, reason, at: c.eta + c.left, level: st.level === 'ok' ? 'normal' : 'warn', critical: c.critical, blocked: c.items.length > 0, icon: 'sunrise', defer: false });
+    } else if (st.needEss) {
+      out.push({ key: 'ess', kind: 'ess', rank: 10, title: 'Вихід без забутого', reason: `Перевірте перед виходом: ще ${st.essTotal - st.essDone} з ${st.essTotal}`, level: 'normal', icon: 'checkCircle', defer: false });
     }
   } else if (sm.rel === 0 && mode !== 'rest' && (sm.phase === 'window' || (sm.phase === 'before' && mode === 'morning' && sm.toWake <= 60))) {
     const key = `morning:${sm.date}`;
     if (free(key)) {
       out.push({
         key, kind: 'morning', rank: mode === 'morning' ? 12 : 25, title: 'Почати ранкову підготовку',
-        reason: sm.phase === 'window' ? `Вихід о ${fmtHM(sm.plan.departure)} · ${relIn(sm.toDep)}` : `Підйом о ${fmtHM(sm.plan.wake)} · ${relIn(sm.toWake)}`,
+        reason: sm.phase === 'window' ? `${sm.tpl.name}: ${end} о ${fmtHM(sm.plan.departure)}, ${relIn(sm.toDep)}` : `${sm.tpl.name}: підйом о ${fmtHM(sm.plan.wake)}, ${relIn(sm.toWake)}`,
         at: sm.depAt, level: sm.phase === 'window' ? 'warn' : 'normal', icon: 'sunrise', defer: true,
       });
     }
@@ -448,14 +564,16 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
   for (const cat of Object.keys(state.gear.active)) {
     const key = `gearrun:${cat}`;
     if (!free(key)) continue;
-    const pr = checkProgress(state.gear, cat);
-    out.push({ key, kind: 'gearRun', cat, rank: mode === 'ready' ? 13 : 40, title: `Завершити перевірку: ${GCAT[cat].name}`, reason: `Перевірка триває · позначено ${pr.marked} з ${pr.total}`, level: 'normal', icon: GCAT[cat].icon, defer: true });
+    const run = state.gear.active[cat];
+    const items = state.gear.cats[cat]?.items || [];
+    const marked = items.filter((i) => run.marks[i.id]).length;
+    out.push({ key, kind: 'gearRun', cat, rank: mode === 'ready' ? 13 : 40, title: 'Завершити перевірку', reason: `Перевірка триває, позначено ${marked} з ${items.length}`, level: 'normal', icon: 'shieldCheck', defer: true });
   }
   const run = state.deck.active;
   if (run && free(`deckrun:${run.id}`)) {
     const sc = state.deck.scenarios.find((s) => s.id === run.sid);
     const pr = runProgress(run, sc);
-    out.push({ key: `deckrun:${run.id}`, kind: 'deckRun', id: run.id, rank: mode === 'ready' ? 14 : mode === 'rest' ? 40 : 15, title: `Продовжити: ${run.title}`, reason: `Сценарій триває · ${pr.done} з ${pr.total} кроків`, level: 'normal', icon: 'play', defer: true });
+    out.push({ key: `deckrun:${run.id}`, kind: 'deckRun', id: run.id, rank: mode === 'ready' ? 14 : mode === 'rest' ? 40 : 15, title: `Продовжити: ${run.title}`, reason: `Сценарій триває, виконано ${pr.done} з ${pr.total}`, level: 'normal', icon: 'play', defer: true });
   }
 
   // Справи
@@ -466,48 +584,56 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     const overdue = t.due < today;
     const at = t.time && t.due === today ? localAt(today, parseHM(t.time)) : null;
     const pinned = tv.main === t && state.pin.date === today && state.pin.id === t.id;
+    const dl = t.deadline ? diffDays(today, t.deadline) : null;
     let rank;
-    if (at != null && at - now <= 60) rank = 18;
+    // Подія найближчої години (і до двох годин після її часу) — першою; давно минула стає звичайною справою.
+    if (at != null && at - now <= 60 && now - at <= 120) rank = 18;
     else if (pinned) rank = mode === 'rest' ? 31 : 19;
+    else if (dl != null && dl <= 0) rank = mode === 'rest' ? 31 : 21;
     else if (mode === 'rest') rank = t.pr === 1 ? (overdue ? 31 : 32) : 60 + t.pr;
-    else rank = t.pr === 1 ? (overdue ? 22 : 24) : 26 + t.pr * 2 - (overdue ? 1 : 0);
-    const parts = [PR[t.pr].name];
-    if (pinned) parts[0] = 'Головне на сьогодні';
+    else rank = t.pr === 1 ? (overdue ? 22 : 24) : 26 + t.pr * 2 - (overdue ? 1 : 0) - (dl === 1 ? 1 : 0);
+    const parts = [pinned ? 'Головне на сьогодні' : PR[t.pr].name];
+    if (dl != null && dl < 0) parts.push(dl === -1 ? 'дедлайн минув учора' : `дедлайн минув ${daysWord(-dl)} тому`);
+    else if (dl === 0) parts.push('дедлайн сьогодні');
+    else if (dl === 1) parts.push('дедлайн завтра');
     if (overdue) parts.push(diffDays(t.due, today) === 1 ? 'прострочено з учора' : `прострочено з ${shortDate(t.due, today)}`);
-    if (at != null) parts.push(at < now ? `мало бути о ${t.time}` : `о ${t.time} · ${relIn(at - now)}`);
+    if (at != null) parts.push(at < now ? `мало бути о ${t.time}` : `о ${t.time}, ${relIn(at - now)}`);
     const sp = subProgress(t);
     if (sp.total) parts.push(`кроків ${sp.done} з ${sp.total}`);
-    out.push({ key, kind: 'task', id: t.id, rank, order: [t.pr, dayNum(t.due), at ?? ORDER_MAX, t.createdAt], title: t.title, reason: parts.join(' · '), at, level: overdue || (at != null && at < now) ? 'warn' : 'normal', icon: t.cat ? TCAT[t.cat].icon : 'list', pr: t.pr, defer: true });
+    out.push({
+      key, kind: 'task', id: t.id, rank, order: [t.pr, dl ?? 1e6, dayNum(t.due), at ?? ORDER_MAX, t.createdAt], title: t.title, reason: sentence(parts), at,
+      level: overdue || (at != null && at < now) || (dl != null && dl < 0) ? 'warn' : 'normal', icon: t.cat ? TCAT[t.cat].icon : 'list', pr: t.pr, defer: true,
+    });
   }
 
-  // Обовʼязкові
+  // «Не забути»
   const mv = mustView(state.musts, today);
-  for (const m of mv.open) {
+  for (const m of mv.active) {
     const key = `must:${m.id}`;
     if (!free(key)) continue;
     let rank, reason;
-    if (m.left !== null && m.left < 0) { rank = mode === 'rest' ? 30 : 20; reason = `Обовʼязкова · строк минув ${daysWord(-m.left)} тому`; }
-    else if (m.left === 0) { rank = mode === 'rest' ? 30 : 20; reason = 'Обовʼязкова · строк сьогодні'; }
-    else if (m.left === 1) { rank = 27; reason = 'Обовʼязкова · строк завтра'; }
-    else { rank = mode === 'rest' ? 62 : 29; reason = m.age ? `Обовʼязкова · у списку ${daysWord(m.age)}` : 'Обовʼязкова · додано сьогодні'; }
+    if (m.left !== null && m.left < 0) { rank = mode === 'rest' ? 30 : 20; reason = `Не забути: строк минув ${daysWord(-m.left)} тому`; }
+    else if (m.left === 0) { rank = mode === 'rest' ? 30 : 20; reason = 'Не забути: строк сьогодні'; }
+    else if (m.left === 1) { rank = 27; reason = 'Не забути: строк завтра'; }
+    else { rank = mode === 'rest' ? 62 : 29; reason = m.age ? `Не забути: у списку ${daysWord(m.age)}` : 'Не забути: додано сьогодні'; }
     out.push({ key, kind: 'must', id: m.id, rank, order: [m.left ?? 1e6, m.createdAt], title: m.title, reason, level: m.left !== null && m.left <= 0 ? 'warn' : 'normal', icon: 'pin', defer: true });
   }
 
-  // Екіпірування
+  // Готовність
   const RANKS = { issues: { ready: 15, day: 33, morning: 50, rest: 34 }, needs: { ready: 16, day: 36, morning: 52, rest: 35 } };
   for (const c of gearSummary(state.gear, nowMs).cats) {
     const s = c.st.s;
-    if ((s !== 'issues' && s !== 'needs') || c.st.reason === 'empty') continue;
+    if (s !== 'issues' && s !== 'needs') continue;
     const key = `gear:${c.id}`;
     if (!free(key)) continue;
-    out.push({ key, kind: 'gear', cat: c.id, rank: RANKS[s][mode], title: s === 'issues' ? `Усунути недоліки: ${c.name}` : `Перевірити: ${c.name}`, reason: c.st.text, level: s === 'issues' ? 'warn' : 'normal', icon: c.icon, defer: true });
+    out.push({ key, kind: 'gear', cat: c.id, rank: RANKS[s][mode], title: s === 'issues' ? `Усунути проблеми: ${c.name}` : `Перевірити: ${c.name}`, reason: c.st.text, level: s === 'issues' ? 'warn' : 'normal', icon: c.icon, defer: true, fix: s === 'issues' });
   }
 
-  // Вечір: план на завтра
+  // Вечір: підсумок дня
   if (mode === 'rest') {
-    const p = computePlan(state.morning);
-    const key = `plan:${addDays(today, 1)}`;
-    if (free(key)) out.push({ key, kind: 'plan', rank: 70, title: 'Переглянути план на завтра', reason: `Підйом о ${fmtHM(p.wake)} · вихід о ${fmtHM(p.departure)}`, level: 'normal', icon: 'moon', defer: true });
+    const day = closeoutDay(nowMs);
+    const key = `evening:${day}`;
+    if (!state.days[day] && free(key)) out.push({ key, kind: 'evening', rank: 70, title: 'Підбити підсумок дня', reason: 'Що зроблено, що перенести і що головне завтра', level: 'normal', icon: 'moon', defer: true });
   }
 
   // Резервна копія
@@ -519,6 +645,16 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
   }
 
   out.sort((a, b) => a.rank - b.rank || cmpArr(a.order, b.order));
+
+  // «Обрати іншу»: ваш вибір стає першим до виконання або до кінця дня.
+  const pick = state.pick;
+  if (pick && pick.key && pick.date === today) {
+    const i = out.findIndex((c) => c.key === pick.key);
+    if (i >= 0) {
+      const [c] = out.splice(i, 1);
+      out.unshift({ ...c, picked: true, reason: `Обрано вами. ${c.reason}` });
+    }
+  }
   return out;
 }
 
@@ -536,78 +672,62 @@ export function nextAction(state, nowMs = Date.now()) {
   return { mode, main: list[0] || null, then: list[1] || null, list };
 }
 
-/* ---------- Хронологія дня ---------- */
+/* ---------- Події дня ---------- */
 
 export function dayEvents(state, nowMs = Date.now()) {
   const now = localMin(nowMs);
   const today = keyOfLocal(now);
   const base = dayNum(today) * DAY;
   const events = [];
-  const p = computePlan(state.morning);
+  const tpl = planTpl(state, now);
+  const p = computePlan(tpl);
   const sm = morningSummary(state, nowMs);
   const morningDone = sm.session && sm.session.date === today && !!sm.session.finishedAt;
   if (!p.wakePrevDay) events.push({ t: base + p.wake, kind: 'wake', title: 'Підйом', done: morningDone || now > base + p.wake });
-  if (p.departure >= 0) events.push({ t: base + p.departure, kind: 'dep', title: 'Вихід', done: now > base + p.departure });
-  if (p.arrival < DAY) events.push({ t: base + p.arrival, kind: 'arr', title: 'Прибуття', done: now > base + p.arrival });
+  if (p.departure >= 0) events.push({ t: base + p.departure, kind: 'dep', title: endLabel(tpl), done: now > base + p.departure });
+  if (!homeDay(tpl) && p.arrival < DAY) events.push({ t: base + p.arrival, kind: 'arr', title: 'Прибуття', done: now > base + p.arrival });
   for (const t of state.tasks) {
-    if (t.due !== today || !t.time) continue;
+    if (t.due !== today || !t.time || t.cancelledAt) continue;
     const m = parseHM(t.time);
     if (m == null) continue;
     events.push({ t: base + m, kind: 'task', title: t.title, id: t.id, done: !!t.doneAt, pr: t.pr });
   }
   events.sort((a, b) => a.t - b.t || (a.kind === 'task') - (b.kind === 'task'));
-  const first = events.length ? events[0].t : now;
-  const last = events.length ? events[events.length - 1].t : now;
-  const start = Math.floor((Math.min(first, now) - 30) / 60) * 60;
-  const end = Math.ceil((Math.max(last, now) + 30) / 60) * 60;
-  return { events, now, start: Math.max(start, base), end: Math.min(Math.max(end, start + 240), base + DAY), base };
+  return { events, now, base };
 }
 
-/* ---------- Day Orb і підсумок дня ---------- */
+/* ---------- Пульс дня ---------- */
+// Лише реальні дані: виконані справи, невиконані пріоритети, найближча подія, прострочене, потрібні перевірки.
 
-export function orbData(state, nowMs = Date.now(), modeId = '') {
+export function pulseData(state, nowMs = Date.now()) {
   const now = localMin(nowMs);
   const today = keyOfLocal(now);
-  const mode = modeId || modeInfo(state, nowMs).id;
-  if (mode === 'morning') {
-    const sm = morningSummary(state, nowMs);
-    if (sm.session) {
-      const st = sessionStatus(state, sm.session, nowMs);
-      const rows = st.rows.filter((r) => r.state !== 'auto');
-      return {
-        mode, value: st.doneCount, total: st.count, big: `${st.doneCount}/${st.count}`, caption: 'кроків ранку',
-        sub: st.finished ? 'Готові до виходу' : `Вихід о ${fmtHM(st.plan.departure)}`,
-        level: st.finished ? 'ok' : st.level === 'ok' ? 'normal' : 'warn',
-        segs: rows.map((r) => (r.state === 'done' || r.state === 'skipped' ? 'done' : st.current && r.id === st.current.id ? 'current' : 'todo')),
-      };
-    }
-    const n = state.morning.steps.length;
-    return {
-      mode, value: 0, total: n, big: fmtHM(sm.plan.departure), caption: sm.rel === 0 ? 'час виходу' : 'вихід завтра',
-      sub: `Підйом о ${fmtHM(sm.plan.wake)}`, level: sm.phase === 'window' ? 'warn' : 'normal', segs: Array(n).fill('todo'), isTime: true,
-    };
-  }
-  if (mode === 'ready') {
-    const gs = gearSummary(state.gear, nowMs);
-    const bad = gs.cats.filter((c) => c.st.s === 'issues');
-    let sub = 'Усі перевірки актуальні';
-    if (bad.length) sub = `Недоліки: ${bad.map((c) => c.short).join(', ')}`;
-    else if (gs.running) sub = 'Перевірка триває';
-    else if (gs.needs) sub = `Потребують перевірки: ${gs.needs}`;
-    return { mode, value: gs.ok, total: gs.total, big: `${gs.ok}/${gs.total}`, caption: 'без недоліків', sub, level: bad.length ? 'warn' : 'normal', segs: gs.cats.map((c) => c.st.s), gear: true };
-  }
-  const tv = taskView(state.tasks, today);
-  const done = tv.doneToday.length, open = tv.openCount, total = done + open;
-  if (mode === 'rest') {
-    const p = computePlan(state.morning);
-    return { mode, value: done, total: Math.max(total, 1), big: String(done), caption: plural(done, ['справу виконано', 'справи виконано', 'справ виконано']), sub: `Завтра підйом о ${fmtHM(p.wake)}`, level: 'normal', segs: null };
-  }
-  const nextEv = dayEvents(state, nowMs).events.find((e) => e.t > now && !e.done);
-  const segs = total && total <= 16 ? [...Array(done).fill('done'), ...Array(tv.overdue.length).fill('late'), ...Array(tv.today.length).fill('todo')] : null;
+  const tv = taskView(state.tasks, today, state.pin);
+  const mv = mustView(state.musts, today);
+  const done = tv.doneToday.length;
+  const open = tv.openCount;
+  const total = done + open;
+  const ev = dayEvents(state, nowMs);
+  const gs = gearSummary(state.gear, nowMs);
+  const beats = [];
+  const onToday = (ms) => ms && todayKey(ms) === today;
+  for (const t of state.tasks) if (!t.cancelledAt && onToday(t.doneAt)) beats.push({ m: minOfDay(localMin(t.doneAt)), k: 'task' });
+  for (const m of state.musts) if (onToday(m.doneAt)) beats.push({ m: minOfDay(localMin(m.doneAt)), k: 'must' });
+  for (const c of state.gear.history) if (onToday(c.finishedAt)) beats.push({ m: minOfDay(localMin(c.finishedAt)), k: 'check' });
+  for (const r of state.deck.runs) if (onToday(r.finishedAt)) beats.push({ m: minOfDay(localMin(r.finishedAt)), k: 'run' });
+  beats.sort((a, b) => a.m - b.m);
   return {
-    mode, value: done, total, big: total ? `${done}/${total}` : '0', caption: total ? 'справ виконано' : 'справ на сьогодні немає',
-    sub: nextEv ? `${fmtHM(nextEv.t)} · ${nextEv.title}` : open ? `Залишилось ${open}` : total ? 'Усе виконано' : '',
-    level: tv.overdue.length ? 'warn' : 'normal', segs,
+    done, open, total,
+    pct: total ? Math.round((done / total) * 100) : null,
+    prioOpen: tv.ordered.filter((t) => t.pr <= 2).length,
+    overdue: tv.overdue.length + mv.active.filter((m) => m.left !== null && m.left < 0).length,
+    next: ev.events.find((e) => e.t > now && !e.done) || null,
+    checks: gs.issues + gs.needs,
+    gearIssues: gs.issues,
+    gearNeeds: gs.needs,
+    beats,
+    events: ev.events.map((e) => ({ m: minOfDay(e.t), kind: e.kind, done: e.done, title: e.title })),
+    nowMin: minOfDay(now),
   };
 }
 
@@ -619,25 +739,105 @@ export function daySummary(state, nowMs = Date.now()) {
   const parts = [];
   if (tv.openCount) parts.push(count(tv.openCount, ['справа', 'справи', 'справ']));
   if (tv.overdue.length) parts.push(`прострочено ${tv.overdue.length}`);
-  if (mv.open.length) parts.push(count(mv.open.length, ['обовʼязкова', 'обовʼязкові', 'обовʼязкових']));
-  if (gs.issues) parts.push(count(gs.issues, ['категорія з недоліками', 'категорії з недоліками', 'категорій з недоліками']));
+  if (mv.active.length) parts.push(`не забути ${mv.active.length}`);
+  if (gs.issues) parts.push(count(gs.issues, ['категорія з проблемами', 'категорії з проблемами', 'категорій з проблемами']));
   else if (gs.needs) parts.push(count(gs.needs, ['перевірка потрібна', 'перевірки потрібні', 'перевірок потрібно']));
-  if (!parts.length) return tv.doneToday.length ? 'Усе на сьогодні виконано' : 'Справ на сьогодні немає';
-  return parts.join(' · ');
+  if (!parts.length) return tv.doneToday.length ? 'Усе важливе на сьогодні зроблено' : 'Справ на сьогодні немає';
+  return parts.join(', ');
+}
+
+/* ---------- Вечірній підсумок ---------- */
+
+// До 04:00 підсумок стосується попереднього дня.
+export function closeoutDay(nowMs = Date.now()) {
+  const now = localMin(nowMs);
+  return minOfDay(now) < 240 ? keyOfLocal(now - DAY) : keyOfLocal(now);
+}
+
+export function eveningData(state, nowMs = Date.now()) {
+  const day = closeoutDay(nowMs);
+  const tomorrow = addDays(day, 1);
+  const tv = taskView(state.tasks, day, state.pin);
+  const doneMusts = state.musts.filter((m) => m.doneAt && todayKey(m.doneAt) === day);
+  const tomorrowTasks = state.tasks.filter((t) => isOpen(t) && t.due === tomorrow).sort(byTask);
+  const tpl = currentTpl(state);
+  return {
+    day, tomorrow,
+    doneTasks: tv.doneToday, doneMusts,
+    remaining: tv.ordered,
+    musts: mustView(state.musts, day).active,
+    tomorrowTasks,
+    tpl, plan: computePlan(tpl),
+    pinTomorrow: state.pin.date === tomorrow ? state.pin.id : '',
+    closed: state.days[day] || null,
+  };
+}
+
+export function closeDay(state, nowMs = Date.now(), moved = 0) {
+  const ed = eveningData(state, nowMs);
+  state.days[ed.day] = { at: nowMs, done: ed.doneTasks.length + ed.doneMusts.length, moved: Math.max(0, moved | 0) };
+  const keys = Object.keys(state.days).sort();
+  while (keys.length > 90) delete state.days[keys.shift()];
+  return ed.day;
+}
+
+/* ---------- Підсумки тижня ---------- */
+
+export function weekStats(state, nowMs = Date.now(), n = 7) {
+  const today = todayKey(nowMs);
+  const rows = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = addDays(today, -i);
+    rows.push({ date: d, tasks: 0, musts: 0, checks: 0, runs: 0, closed: !!state.days[d] });
+  }
+  const idx = Object.fromEntries(rows.map((r, i) => [r.date, i]));
+  const add = (ms, f) => { if (!ms) return; const k = todayKey(ms); if (k in idx) rows[idx[k]][f]++; };
+  for (const t of state.tasks) if (!t.cancelledAt) add(t.doneAt, 'tasks');
+  for (const m of state.musts) add(m.doneAt, 'musts');
+  for (const c of state.gear.history) add(c.finishedAt, 'checks');
+  for (const r of state.deck.runs) add(r.finishedAt, 'runs');
+  const sum = (f) => rows.reduce((s, r) => s + r[f], 0);
+  return {
+    rows,
+    tasks: sum('tasks'), musts: sum('musts'), checks: sum('checks'), runs: sum('runs'),
+    closed: rows.filter((r) => r.closed).length,
+    max: Math.max(1, ...rows.map((r) => r.tasks + r.musts)),
+  };
+}
+
+/* ---------- Таймер «Фокусу» ---------- */
+
+export function focusLeft(state, nowMs = Date.now()) {
+  const f = state.focus;
+  if (!f) return null;
+  const end = f.start + f.mins * 60000;
+  return { id: f.id, mins: f.mins, left: Math.max(0, Math.ceil((end - nowMs) / 1000)), over: nowMs >= end, end };
 }
 
 /* ---------- Очищення застарілого ---------- */
 
-// Виконане старше 30 днів прибираємо, щоб сховище не росло.
+// Виконане й скасоване зберігається в архіві 180 днів (не більше 1500 записів).
 export function purge(state, nowMs = Date.now()) {
-  const cut = nowMs - 30 * 864e5;
-  state.tasks = state.tasks.filter((t) => !t.doneAt || t.doneAt > cut);
-  state.musts = state.musts.filter((m) => !m.doneAt || m.doneAt > cut);
+  const cut = nowMs - ARCHIVE_DAYS * 864e5;
+  const closedAt = (x) => x.doneAt || x.cancelledAt || 0;
+  const keep = (list) => {
+    let out = list.filter((x) => !closedAt(x) || closedAt(x) > cut);
+    const archived = out.filter(closedAt).sort((a, b) => closedAt(b) - closedAt(a));
+    if (archived.length > ARCHIVE_MAX) {
+      const drop = new Set(archived.slice(ARCHIVE_MAX));
+      out = out.filter((x) => !drop.has(x));
+    }
+    return out;
+  };
+  state.tasks = keep(state.tasks);
+  state.musts = keep(state.musts);
   if (state.later) {
     const now = localMin(nowMs);
     for (const [k, v] of Object.entries(state.later)) if (!(v > now)) delete state.later[k];
   }
-  if (state.pin && state.pin.date && state.pin.date !== todayKey(nowMs)) state.pin = { id: '', date: '' };
+  const today = todayKey(nowMs);
+  if (state.pin && state.pin.date && state.pin.date < today) state.pin = { id: '', date: '' };
+  if (state.pick && state.pick.date !== today) state.pick = { key: '', date: '' };
   return state;
 }
 
@@ -654,7 +854,7 @@ const okId = (v) => typeof v === 'string' && /^[\w-]{1,64}$/.test(v);
 const cleanId = (v) => (okId(v) ? v : uid());
 
 function cleanRep(r, due) {
-  if (!plain(r)) return null;
+  if (!plain(r) || !due) return null;
   if (r.k === 'daily' || r.k === 'weekdays') return { k: r.k };
   if (r.k === 'weekly') {
     const days = Array.isArray(r.days) ? [...new Set(r.days.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort() : [];
@@ -676,78 +876,140 @@ function cleanSettings(st) {
     mode: mode.id === 'auto' ? { id: 'auto', until: 0 } : mode,
     restAt: parseHM(st.restAt) == null ? d.restAt : fmtHM(parseHM(st.restAt)),
     haptics: st.haptics !== false,
+    onboarded: st.onboarded === true,
   };
 }
 
-// Приводить будь-які збережені або імпортовані дані (зокрема схеми v1) до схеми v2.
+function cleanSteps(list, dflt, counter) {
+  if (!Array.isArray(list)) return dflt;
+  const ids = new Set();
+  const steps = [];
+  for (const s of list.slice(0, 40)) {
+    const title = plain(s) ? str(s.title, 80).trim() : '';
+    if (!title) { counter.dropped++; continue; }
+    const min = int(s.min, 1, 180, 5);
+    const critical = s.critical === true;
+    let id = cleanId(s.id);
+    if (ids.has(id)) id = uid();
+    ids.add(id);
+    steps.push({
+      id, title, min, critical,
+      short: critical ? min : int(s.short, 0, min, min),
+      items: Array.isArray(s.items) ? s.items.map((x) => str(x, 60).trim()).filter(Boolean).slice(0, 12) : [],
+      kind: s.kind === 'tasks' || s.kind === 'gear' ? s.kind : '',
+    });
+  }
+  return steps;
+}
+
+function cleanTpl(raw, kind, counter) {
+  if (!plain(raw)) return null;
+  const k = TPL_KIND[kind] ? kind : 'custom';
+  const d = defaultTemplate(k === 'custom' ? 'work' : k);
+  const travel = {};
+  for (const t of TRANSPORT) travel[t.id] = t.id === 'none' ? 0 : int(raw.travel?.[t.id], 0, 600, d.travel[t.id]);
+  const arr = parseHM(raw.arrival);
+  const name = str(raw.name, 40).trim() || TPL_KIND[k].name;
+  return {
+    id: k === 'custom' ? cleanId(raw.id) : `tpl-${k}`,
+    kind: k,
+    name,
+    arrival: arr == null ? d.arrival : fmtHM(arr),
+    transport: TR[raw.transport] ? raw.transport : d.transport,
+    travel,
+    buffer: BUFFERS.includes(+raw.buffer) ? +raw.buffer : d.buffer,
+    steps: cleanSteps(raw.steps, d.steps, counter),
+  };
+}
+
+// Типові кроки попередньої версії: якщо їх не змінювали — замінюємо новими (перелік речей тепер у «Вихід без забутого»).
+const V2_STEPS = [['Прокинутися', 5, 2], ['Гігієна', 15, 7], ['Сніданок і вода', 15, 3], ['Особисті речі', 10, 5], ['Документи, телефон, заряд', 5, 5], ['Перевірка завдань', 5, 1], ['Одягнутися й вийти', 5, 5]];
+const isV2Default = (steps) => Array.isArray(steps) && steps.length === V2_STEPS.length
+  && steps.every((s, i) => plain(s) && s.title === V2_STEPS[i][0] && +s.min === V2_STEPS[i][1] && +s.short === V2_STEPS[i][2]);
+
+function cleanEss(list) {
+  if (!Array.isArray(list)) return ESS_DEFAULT.map((t) => ({ id: uid(), t }));
+  const out = [];
+  const ids = new Set();
+  for (const e of list.slice(0, 15)) {
+    const t = plain(e) ? str(e.t, 60).trim() : '';
+    if (!t) continue;
+    let id = cleanId(e.id);
+    if (ids.has(id)) id = uid();
+    ids.add(id);
+    out.push({ id, t });
+  }
+  return out;
+}
+
+function cleanMorning(rm, keepSteps, counter) {
+  const d = defaultMorning();
+  if (!plain(rm)) return d;
+  if (Array.isArray(rm.templates)) {
+    const templates = [];
+    for (const t of rm.templates.slice(0, 20)) {
+      if (!plain(t)) continue;
+      const kind = BUILTIN_TPL.includes(t.kind) && t.id === `tpl-${t.kind}` ? t.kind : 'custom';
+      const c = cleanTpl(t, kind, counter);
+      if (!c || templates.some((x) => x.id === c.id)) continue;
+      if (kind === 'custom' && templates.filter((x) => x.kind === 'custom').length >= TPL_CUSTOM_MAX) continue;
+      templates.push(c);
+    }
+    for (const k of BUILTIN_TPL) if (!templates.some((t) => t.id === `tpl-${k}`)) templates.push(defaultTemplate(k));
+    const order = (t) => (t.kind === 'custom' ? 99 : BUILTIN_TPL.indexOf(t.kind));
+    templates.sort((a, b) => order(a) - order(b));
+    return { active: templates.some((t) => t.id === rm.active) ? rm.active : 'tpl-work', templates, essentials: cleanEss(rm.essentials) };
+  }
+  // Версії 1–2: один ранковий план → шаблон «Робочий день».
+  const work = cleanTpl({ ...rm, name: TPL_KIND.work.name }, 'work', counter);
+  if (!keepSteps && isV2Default(rm.steps)) work.steps = defaultSteps('work');
+  return { active: 'tpl-work', templates: [work, ...BUILTIN_TPL.slice(1).map(defaultTemplate)], essentials: cleanEss(rm.essentials) };
+}
+
+// Приводить будь-які збережені або імпортовані дані (схем 1–3) до схеми 3 без втрат.
 export function cleanState(raw, nowMs = Date.now()) {
   const d = defaultState();
   if (!plain(raw)) return { state: d, dropped: 0, from: 0 };
-  let dropped = 0;
+  const counter = { dropped: 0 };
   const today = todayKey(nowMs);
   const from = int(raw.v, 0, 99, 0);
 
   const settings = cleanSettings(raw.settings);
-  // Основна тема нової версії — Obsidian (темна). Типове «як у системі» з v1 переводимо на неї.
+  // Основна тема — Obsidian (темна). Типове «як у системі» з v1 переводимо на неї.
   if (from === 1 && settings.theme === 'auto') settings.theme = 'dark';
+  // Хто вже користувався застосунком, вітального екрана не бачить.
+  if (from >= 1 && from < SCHEMA) settings.onboarded = true;
 
-  const rm = plain(raw.morning) ? raw.morning : {};
-  const arr = parseHM(rm.arrival);
-  const travel = {};
-  for (const t of TRANSPORT) travel[t.id] = int(rm.travel?.[t.id], 0, 600, d.morning.travel[t.id]);
-  let steps = d.morning.steps;
-  if (Array.isArray(rm.steps)) {
-    const ids = new Set();
-    steps = [];
-    for (const s of rm.steps.slice(0, 40)) {
-      const title = plain(s) ? str(s.title, 80).trim() : '';
-      if (!title) { dropped++; continue; }
-      const min = int(s.min, 1, 180, 5);
-      const critical = s.critical === true;
-      let id = cleanId(s.id);
-      if (ids.has(id)) id = uid();
-      ids.add(id);
-      steps.push({
-        id, title, min, critical,
-        short: critical ? min : int(s.short, 0, min, min),
-        items: Array.isArray(s.items) ? s.items.map((x) => str(x, 60).trim()).filter(Boolean).slice(0, 12) : [],
-        kind: s.kind === 'tasks' ? 'tasks' : '',
-      });
-    }
-  }
-  const morning = {
-    arrival: arr == null ? d.morning.arrival : fmtHM(arr),
-    transport: TRANSPORT.some((t) => t.id === rm.transport) ? rm.transport : 'bus',
-    travel,
-    buffer: BUFFERS.includes(+rm.buffer) ? +rm.buffer : 15,
-    steps,
-  };
+  const rs = raw.session;
+  const hasSession = plain(rs) && isKey(rs.date) && !!stamp(rs.startedAt);
+  const morning = cleanMorning(raw.morning, hasSession, counter);
 
   let session = null;
-  const rs = raw.session;
-  if (plain(rs) && isKey(rs.date) && stamp(rs.startedAt)) {
-    const done = {}, skipped = {}, checks = {};
+  if (hasSession) {
+    const done = {}, skipped = {}, checks = {}, ess = {};
     if (plain(rs.done)) for (const [k, v] of Object.entries(rs.done)) if (stamp(v)) done[k] = stamp(v);
     if (plain(rs.skipped)) for (const [k, v] of Object.entries(rs.skipped)) if (v === true) skipped[k] = true;
     if (plain(rs.checks)) for (const [k, v] of Object.entries(rs.checks)) if (Array.isArray(v)) checks[k] = v.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < 12);
-    session = { date: rs.date, startedAt: stamp(rs.startedAt), done, skipped, checks, short: rs.short === true, finishedAt: stamp(rs.finishedAt) };
+    if (plain(rs.ess)) for (const [k, v] of Object.entries(rs.ess)) if (stamp(v)) ess[k] = stamp(v);
+    const tpl = morning.templates.some((t) => t.id === rs.tpl) ? rs.tpl : morning.active;
+    session = { date: rs.date, tpl, startedAt: stamp(rs.startedAt), done, skipped, checks, short: rs.short === true, finishedAt: stamp(rs.finishedAt), ess };
   }
 
   const seen = new Set();
   const take = (x) => {
     const title = plain(x) ? str(x.title, 300).trim() : '';
-    if (!title) { dropped++; return null; }
+    if (!title) { counter.dropped++; return null; }
     let id = cleanId(x.id);
     if (seen.has(id)) id = uid();
     seen.add(id);
-    return { id, title, note: str(x.note, 2000), createdAt: stamp(x.createdAt) || nowMs, doneAt: stamp(x.doneAt) };
+    return { id, title, note: str(x.note, 2000), createdAt: stamp(x.createdAt) || nowMs, doneAt: stamp(x.doneAt), cancelledAt: stamp(x.cancelledAt) };
   };
   const tasks = [];
-  for (const x of Array.isArray(raw.tasks) ? raw.tasks.slice(0, 2000) : []) {
+  for (const x of Array.isArray(raw.tasks) ? raw.tasks.slice(0, 4000) : []) {
     const b = take(x);
     if (!b) continue;
-    const due = isKey(x.due) ? x.due : today;
-    const time = parseHM(x.time);
+    const due = x.due === '' && from >= 3 ? '' : isKey(x.due) ? x.due : today;
+    const time = due ? parseHM(x.time) : null;
     const sub = [];
     for (const s of Array.isArray(x.sub) ? x.sub.slice(0, 30) : []) {
       const t = plain(s) ? str(s.t, 120).trim() : '';
@@ -758,7 +1020,8 @@ export function cleanState(raw, nowMs = Date.now()) {
       pr: int(x.pr, 1, 3, 2),
       due,
       time: time == null ? '' : fmtHM(time),
-      cat: TCAT[x.cat] ? x.cat : '',
+      deadline: isKey(x.deadline) ? x.deadline : '',
+      cat: TCAT[x.cat] ? x.cat : CAT_V2[x.cat] || '',
       sub,
       rep: cleanRep(x.rep, due),
       sid: okId(x.sid) ? x.sid : b.id,
@@ -767,35 +1030,48 @@ export function cleanState(raw, nowMs = Date.now()) {
     });
   }
   const musts = [];
-  for (const x of Array.isArray(raw.musts) ? raw.musts.slice(0, 1000) : []) {
+  for (const x of Array.isArray(raw.musts) ? raw.musts.slice(0, 2000) : []) {
     const b = take(x);
-    if (b) musts.push({ ...b, deadline: isKey(x.deadline) ? x.deadline : '' });
+    if (b) musts.push({ ...b, deadline: isKey(x.deadline) ? x.deadline : '', returnOn: isKey(x.returnOn) ? x.returnOn : '', moved: int(x.moved, 0, 999, 0) });
   }
 
   const pin = plain(raw.pin) && okId(raw.pin.id) && isKey(raw.pin.date) ? { id: raw.pin.id, date: raw.pin.date } : { id: '', date: '' };
+  const pick = plain(raw.pick) && typeof raw.pick.key === 'string' && raw.pick.key.length <= 100 && isKey(raw.pick.date) ? { key: raw.pick.key, date: raw.pick.date } : { key: '', date: '' };
   const laterMap = {};
   if (plain(raw.later)) for (const [k, v] of Object.entries(raw.later).slice(0, 300)) if (typeof k === 'string' && k.length <= 100 && Number.isFinite(+v) && +v > 0) laterMap[k] = +v;
+  const rf = raw.focus;
+  const focus = plain(rf) && okId(rf.id) && stamp(rf.start) ? { id: rf.id, start: stamp(rf.start), mins: int(rf.mins, 1, 180, 25) } : null;
+  const days = {};
+  if (plain(raw.days)) {
+    for (const [k, v] of Object.entries(raw.days).sort(([a], [b]) => cmpKey(a, b)).slice(-90)) {
+      if (isKey(k) && plain(v) && stamp(v.at)) days[k] = { at: stamp(v.at), done: int(v.done, 0, 9999, 0), moved: int(v.moved, 0, 9999, 0) };
+    }
+  }
 
   return {
     state: {
-      v: SCHEMA, updatedAt: stamp(raw.updatedAt), settings, morning, session, tasks, musts, pin, later: laterMap,
+      v: SCHEMA, updatedAt: stamp(raw.updatedAt), settings, morning, session, tasks, musts, pin, pick, later: laterMap,
       gear: cleanGear(raw.gear, nowMs),
       deck: cleanDeck(raw.deck),
       tools: cleanTools(raw.tools),
+      focus,
+      days,
     },
-    dropped,
+    dropped: counter.dropped,
     from,
   };
 }
 
 export function overview(s) {
   const items = Object.values(s.gear.cats).reduce((n, c) => n + c.items.length, 0);
+  const tpl = currentTpl(s);
   return {
-    tasks: s.tasks.filter((t) => !t.doneAt).length,
-    tasksDone: s.tasks.filter((t) => t.doneAt).length,
-    musts: s.musts.filter((m) => !m.doneAt).length,
-    steps: s.morning.steps.length,
-    arrival: s.morning.arrival,
+    tasks: s.tasks.filter(isOpen).length,
+    tasksDone: s.tasks.filter((t) => !isOpen(t)).length,
+    musts: s.musts.filter(isOpen).length,
+    steps: tpl.steps.length,
+    templates: s.morning.templates.length,
+    arrival: tpl.arrival,
     items,
     checks: s.gear.history.length,
     scenarios: s.deck.scenarios.length,
@@ -804,7 +1080,7 @@ export function overview(s) {
 }
 
 export function makeBackup(state, nowMs = Date.now()) {
-  return { app: 'opora', kind: 'backup', v: SCHEMA, exportedAt: nowMs, data: { ...state, session: null, deck: { ...state.deck, active: null } } };
+  return { app: 'opora', kind: 'backup', v: SCHEMA, exportedAt: nowMs, data: { ...state, session: null, focus: null, deck: { ...state.deck, active: null } } };
 }
 
 export function readBackup(obj, nowMs = Date.now()) {

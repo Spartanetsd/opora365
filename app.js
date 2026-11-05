@@ -1,27 +1,32 @@
-// ОПОРА 365 — ядро: стан, маршрути, оновлення часу, тема й режим, офлайн, обробка помилок.
+// ОПОРА 365 — ядро: стан, три вкладки й вкладені сторінки, фонові зображення, оновлення часу,
+// тема й режим, офлайн, обробка помилок.
 import * as L from './logic.js';
+import * as G from './logic-gear.js';
 import * as store from './store.js';
 import { $, $$, icon, toast, closeSheet, initDialogs, reduceMotion, setHaptics, screenOpen } from './ui.js';
-import { animateRings, scrollDaylines, errorState } from './components.js';
+import { animateRings, errorState } from './components.js';
 import home from './view-home.js';
 import morning from './view-morning.js';
 import tasks from './view-tasks.js';
 import gear from './view-gear.js';
 import deck from './view-deck.js';
 import tools from './view-tools.js';
-import settings from './view-settings.js';
+import stats from './view-stats.js';
+import evening from './view-evening.js';
+import settings, { openMenu } from './view-settings.js';
+import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '2.0.1';
+const VERSION = '3.0.0';
 
-const VIEWS = { home, morning, tasks, gear, deck, tools };
+const VIEWS = { home, morning, tasks, gear, deck, tools, stats };
 const TABS = [
-  { id: 'home', name: 'Сьогодні', icon: 'orb' },
-  { id: 'morning', name: 'Ранок', icon: 'sunrise' },
-  { id: 'tasks', name: 'Справи', icon: 'list' },
-  { id: 'gear', name: 'Екіпірування', icon: 'shieldCheck' },
-  { id: 'deck', name: 'Швидко', icon: 'deck' },
+  { id: 'home', name: 'Сьогодні', icon: 'sun' },
+  { id: 'gear', name: 'Готовність', icon: 'shieldCheck' },
+  { id: 'deck', name: 'Швидка дія', icon: 'chevrons' },
 ];
-const TAB_OF = { tools: 'deck' };
+// Вкладені сторінки: до якої вкладки належать і куди веде «Назад».
+const PARENT = { morning: 'home', tasks: 'home', stats: 'home', tools: 'deck' };
+const PARENT_NAME = { home: 'Сьогодні', gear: 'Готовність', deck: 'Швидка дія' };
 
 const app = {
   version: VERSION,
@@ -30,9 +35,13 @@ const app = {
   day: '',
   minute: -1,
   standalone: false,
-  ui: { flash: '', showDone: false, showMore: false, showMustDone: false, showUpcoming: false, qPr: 2, qTomorrow: false, toolQ: '', toolCat: '', toolEdit: false },
+  ui: { flash: '', qPr: 2, qTomorrow: false, toolQ: '', toolCat: '', toolEdit: false, taskSeg: 'work', taskQ: '', taskCat: '', showMoreMusts: false, modeLen: 'day' },
   get today() { return L.todayKey(); },
   get view() { return VIEWS[this.route.tab]; },
+  isLight() {
+    const t = this.state?.settings.theme || 'dark';
+    return t === 'light' || (t === 'auto' && matchMedia('(prefers-color-scheme: light)').matches);
+  },
   commit(fn, { render = true } = {}) {
     fn(this.state);
     store.save(this.state);
@@ -45,8 +54,9 @@ const app = {
     this.route = { tab, sub };
     const hash = `#${tab}${sub ? `/${sub}` : ''}`;
     if (location.hash !== hash) {
-      // Вкладки не накопичують історію; вкладені сторінки — так, щоб працював жест «назад».
-      if (sub && !replace) history.pushState('sub', '', hash);
+      // Вкладки не накопичують історію; вкладені сторінки — так, щоб «Назад» повертав на місце.
+      const nested = !!sub || !!PARENT[tab];
+      if (nested && !replace) history.pushState('sub', '', hash);
       else history.replaceState('root', '', hash);
     }
     this.render({ enter: !same });
@@ -67,11 +77,12 @@ const app = {
     view.innerHTML = html;
     view.classList.toggle('enter', enter && !reduceMotion());
     if (keepId) document.getElementById(keepId)?.focus({ preventScroll: true });
+    setBackdrop(mod.backdrop ? mod.backdrop(this) : null);
     renderChrome();
     animateRings(view);
-    scrollDaylines(view);
     try { mod.after?.(this, view); } catch (err) { console.error(err); }
     observeTitle();
+    liveTick();
     this.minute = Math.floor(L.localMin());
   },
   applyTheme,
@@ -80,16 +91,23 @@ const app = {
 
 const ACTIONS = {
   tab: (a, el) => a.go(el.dataset.tab, el.dataset.sub || ''),
-  back: () => { if (history.state === 'sub') history.back(); else app.go(app.route.tab); },
+  back: () => {
+    if (history.state === 'sub') history.back();
+    else app.go(PARENT[app.route.tab] || app.route.tab);
+  },
   sheetClose: () => closeSheet(),
   reload: () => location.reload(),
+  openMenu: () => openMenu(app),
   ...home.actions,
   ...morning.actions,
   ...tasks.actions,
   ...gear.actions,
   ...deck.actions,
   ...tools.actions,
+  ...stats.actions,
+  ...evening.actions,
   ...settings.actions,
+  ...welcome.actions,
 };
 
 /* ---------- Події (одне делегування на весь документ) ---------- */
@@ -143,10 +161,44 @@ window.addEventListener('popstate', () => {
   app.render({ enter: true });
 });
 
+// Старі адреси версії 2 (#morning, #tasks, #tools) працюють і далі.
 function parseHash() {
   const [t, sub = ''] = location.hash.replace(/^#/, '').split('/');
   if (VIEWS[t]) return { tab: t, sub: VIEWS[t].validSub ? VIEWS[t].validSub(app, sub) : '' };
   return { tab: 'home', sub: '' };
+}
+
+/* ---------- Фонове зображення сторінки ---------- */
+// Живе поза вмістом: щохвилинне оновлення сторінки не перемальовує картинку.
+
+function setBackdrop(spec) {
+  const el = $('#backdrop');
+  const key = spec ? `${spec.src}|${spec.kind}|${spec.pos || ''}` : '';
+  document.documentElement.dataset.bd = spec ? spec.kind : '';
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  if (!spec) { el.hidden = true; el.replaceChildren(); return; }
+  el.hidden = false;
+  el.dataset.kind = spec.kind;
+  const img = new Image();
+  img.alt = '';
+  img.decoding = 'async';
+  img.className = 'bd-img';
+  img.setAttribute('fetchpriority', 'high');
+  img.style.objectPosition = spec.pos || 'center';
+  img.src = spec.src;
+  const old = [...el.querySelectorAll('.bd-img')];
+  if (old.length && !reduceMotion()) {
+    img.classList.add('incoming');
+    el.prepend(img);
+    const show = () => requestAnimationFrame(() => img.classList.remove('incoming'));
+    if (img.complete) show(); else { img.onload = show; img.onerror = show; }
+    setTimeout(() => old.forEach((o) => o.remove()), 320);
+  } else {
+    old.forEach((o) => o.remove());
+    el.prepend(img);
+  }
+  if (!el.querySelector('.bd-shade')) el.insertAdjacentHTML('beforeend', '<div class="bd-shade"></div>');
 }
 
 /* ---------- Верхня й нижня панелі ---------- */
@@ -160,7 +212,7 @@ function buildChrome() {
 }
 
 function renderChrome() {
-  const tabNow = TAB_OF[app.route.tab] || app.route.tab;
+  const tabNow = PARENT[app.route.tab] || app.route.tab;
   for (const b of $$('.tab')) {
     const on = b.dataset.tab === tabNow;
     b.classList.toggle('on', on);
@@ -169,7 +221,8 @@ function renderChrome() {
   const today = app.today;
   const tv = L.taskView(app.state.tasks, today);
   const mv = L.mustView(app.state.musts, today);
-  const lateMusts = mv.open.filter((m) => m.left !== null && m.left < 0).length;
+  const late = tv.overdue.length + mv.active.filter((m) => m.left !== null && m.left < 0).length;
+  const issues = G.gearSummary(app.state.gear).issues;
   const badge = (tab, n, label) => {
     const b = $(`.tab[data-tab="${tab}"]`);
     const el = b.querySelector('.badge');
@@ -178,11 +231,15 @@ function renderChrome() {
     el.textContent = n > 99 ? '99+' : String(n);
     b.setAttribute('aria-label', n ? `${name}, ${label} ${n}` : name);
   };
-  badge('tasks', tv.overdue.length + lateMusts, 'прострочено');
+  badge('home', late, 'прострочено');
+  badge('gear', issues, 'потребують уваги');
   const mod = app.view;
   const ch = mod.chrome ? mod.chrome(app) : {};
-  $('#tbLeft').innerHTML = ch.left || '';
-  $('#tbActions').innerHTML = (ch.right || '') + `<button type="button" class="icon-btn" data-act="openSettings" aria-label="Налаштування">${icon('gear')}</button>`;
+  const nested = !!app.route.sub || !!PARENT[app.route.tab];
+  const parent = PARENT[app.route.tab] || app.route.tab;
+  const back = nested ? `<button type="button" class="back-btn" data-act="back">${icon('back')}<span>${ch.backLabel || PARENT_NAME[parent] || 'Назад'}</span></button>` : '';
+  $('#tbLeft').innerHTML = back || ch.left || '';
+  $('#tbActions').innerHTML = (ch.right || '') + `<button type="button" class="icon-btn" data-act="openMenu" aria-label="Меню: ранок, справи, підсумки, інструменти, налаштування">${icon('more')}</button>`;
   $('#tbTitle').textContent = typeof mod.title === 'function' ? mod.title(app) : mod.title;
 }
 
@@ -200,22 +257,21 @@ function observeTitle() {
 
 /* ---------- Тема і режим дня ---------- */
 
-const META_BG = { dark: '#080D16', light: '#F6F2EC' };
+const META_BG = { dark: '#080D16', light: '#EEF3F8' };
 function applyTheme() {
   const t = app.state.settings.theme;
   const root = document.documentElement;
   root.dataset.theme = t;
-  const dark = t === 'dark' || (t === 'auto' && !matchMedia('(prefers-color-scheme: light)').matches);
+  root.dataset.scheme = app.isLight() ? 'light' : 'dark';
   const meta = $('meta[name="theme-color"]');
-  if (meta) meta.content = dark ? META_BG.dark : META_BG.light;
+  if (meta) meta.content = app.isLight() ? META_BG.light : META_BG.dark;
   try { localStorage.setItem('opora.theme', t); } catch { /* сховище недоступне */ }
 }
 function applyMode() {
-  const m = L.modeInfo(app.state).id;
-  document.documentElement.dataset.mode = m;
+  document.documentElement.dataset.mode = L.modeInfo(app.state).id;
 }
 
-/* ---------- Час: щохвилинне оновлення, новий день ---------- */
+/* ---------- Час: щохвилинне оновлення, новий день, живі відліки ---------- */
 
 function busy() {
   return $('#sheet').open || document.activeElement?.matches?.('input, textarea, select') || document.documentElement.classList.contains('dragging');
@@ -242,21 +298,27 @@ function scheduleTick() {
   setTimeout(() => { tick(); scheduleTick(); }, Math.max(1000, (60 - s) * 1000 + 150));
 }
 
+// Зворотні відліки (вихід, таймер «Фокусу») оновлюються щосекунди лише власним текстом.
+function liveTick() {
+  if (document.hidden) return;
+  const nowMs = Date.now();
+  for (const el of document.querySelectorAll('[data-count-to]')) {
+    const left = Math.round((+el.dataset.countTo - nowMs) / 1000);
+    el.textContent = L.fmtClock(left);
+    if (left <= 0 && el.dataset.fin && !el.dataset.fired) {
+      el.dataset.fired = '1';
+      app.screenTick?.();
+    }
+  }
+}
+setInterval(liveTick, 1000);
+
 document.addEventListener('visibilitychange', () => {
   const vis = document.visibilityState === 'visible';
   document.documentElement.classList.toggle('hidden', !vis);
-  if (vis) { tick(); checkUpdate(); } else store.flush();
+  if (vis) { tick(); liveTick(); checkUpdate(); } else store.flush();
 });
 window.addEventListener('pagehide', () => { store.flush(); });
-
-// Ореол «дихає», лише коли інтерфейсом користуються — так менше витрачається батарея.
-let idleTimer = 0;
-function wake() {
-  document.documentElement.classList.remove('idle');
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => document.documentElement.classList.add('idle'), 25000);
-}
-for (const ev of ['pointerdown', 'keydown', 'scroll', 'touchstart']) window.addEventListener(ev, wake, { passive: true });
 
 // Висота екранної клавіатури — щоб панелі не ховалися під нею.
 function trackKeyboard() {
@@ -282,8 +344,7 @@ let swReg = null;
 let lastCheck = 0;
 let offered = null;
 
-// Нова версія готова: пропонуємо оновитися. Повторно — після повернення в застосунок,
-// бо повідомлення могло зникнути під іншим.
+// Нова версія готова: пропонуємо оновитися. Повторно — після повернення в застосунок.
 function offerUpdate(worker, again = false) {
   if (!worker || !navigator.serviceWorker.controller) return;
   if (offered === worker && !again) return;
@@ -291,8 +352,6 @@ function offerUpdate(worker, again = false) {
   toast('Доступна нова версія ОПОРА 365', { label: 'Оновити', run: () => { store.flush().finally(() => worker.postMessage('skip-waiting')); } }, Infinity);
 }
 
-// Стежимо за версією, що встановлюється. Оновлення могло почати встановлюватися
-// ще до реєстрації (перевірку браузер запускає сам під час відкриття сторінки).
 function track(worker) {
   if (!worker) return;
   if (worker.state === 'installed') { offerUpdate(worker); return; }
@@ -331,14 +390,14 @@ window.addEventListener('error', (e) => console.error(e.error || e.message));
 window.addEventListener('unhandledrejection', (e) => console.error(e.reason));
 
 async function boot() {
-  const { state } = await store.load();
+  const { state, fresh } = await store.load();
   app.state = L.purge(state);
   app.day = L.todayKey();
   app.standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   setHaptics(app.state.settings.haptics);
   applyTheme();
   applyMode();
-  matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', applyTheme);
+  matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => { applyTheme(); app.render(); });
   buildChrome();
   initDialogs();
   trackKeyboard();
@@ -346,15 +405,16 @@ async function boot() {
   history.replaceState('root', '', `#${app.route.tab}${app.route.sub ? `/${app.route.sub}` : ''}`);
   app.render({ enter: true });
   document.documentElement.classList.add('ready');
-  wake();
   scheduleTick();
   setInterval(tick, 20000);
   store.persistence(true);
   registerSW();
   if (store.status.migratedFrom) {
     store.save(app.state);
-    toast('ОПОРА оновлено до 365: ваші справи й налаштування ранку збережено', null, 5200);
+    toast('ОПОРА 365 оновлено: три розділи й новий вигляд. Дані збережено', null, 5600, 'check');
   }
+  if (!app.state.settings.onboarded && fresh) openWelcome(app);
+  else if (!app.state.settings.onboarded) app.commit((s) => { s.settings.onboarded = true; }, { render: false });
 }
 
 boot().catch((err) => {

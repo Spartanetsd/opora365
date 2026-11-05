@@ -1,28 +1,23 @@
-// ОПОРА 365 — «Швидко»: Command Deck. Великі плитки сценаріїв, чекліст за один дотик.
-// «Готово» зʼявляється лише після підтвердження всіх обовʼязкових кроків.
-// Це інтерфейс організації особистих справ і навчальних занять — без тактичних рекомендацій.
+// ОПОРА 365 — «Швидка дія»: Command Deck. Сценарій за один-два дотики, памʼять дій (останні й обрані),
+// несподіване доручення одразу в справи. Лише організаційні чеклісти: без тактичних рекомендацій
+// і без збирання оперативних відомостей.
 import * as L from './logic.js';
 import * as D from './logic-deck.js';
-import { $, esc, icon, openSheet, closeSheet, confirmSheet, choiceSheet, toast, sheetHead, haptic, openScreen, updateScreen, closeScreen } from './ui.js';
-import { quickTile, checklistItem, miniRing, emptyState, animateRings } from './components.js';
+import { $, esc, icon, seg, openSheet, closeSheet, confirmSheet, choiceSheet, toast, sheetHead, haptic, openScreen, updateScreen, closeScreen, setScreenBg } from './ui.js';
+import { quickTile, checklistItem, miniRing, emptyState, animateRings, photoHead } from './components.js';
 import { addTask } from './view-tasks.js';
-
-export function switcher(active) {
-  return `<div class="seg" role="radiogroup" aria-label="Розділ" style="margin-bottom:6px">
-    <button type="button" role="radio" aria-checked="${active === 'deck'}" data-act="tab" data-tab="deck"><span>Сценарії</span></button>
-    <button type="button" role="radio" aria-checked="${active === 'tools'}" data-act="tab" data-tab="tools"><span>Інструменти</span></button>
-  </div>`;
-}
 
 const scOf = (app, id) => app.state.deck.scenarios.find((s) => s.id === id) || null;
 
-function runRow(r) {
-  const t = L.kyivParts(r.finishedAt);
-  const res = r.result === 'done' ? `Готово · ${r.doneCount}/${r.total}` : `Частково · не підтверджено обовʼязкових: ${r.reqTotal - r.reqDone}`;
-  return `<div class="row">
-    <span class="row-ic" data-r="${r.result}">${icon(r.result === 'done' ? 'checkCircle' : 'alertCircle')}</span>
-    <span class="row-main"><span class="row-title">${esc(r.title)}</span><span class="row-meta"><span>${L.shortDate(t.date, L.todayKey())}, ${L.fmtHM(t.min)}</span><span>${esc(res)}</span></span></span>
-  </div>`;
+function memoryRow(app, { sc, run }) {
+  const k = D.KIND[sc.kind];
+  const t = L.kyivParts(run.finishedAt);
+  const res = sc.kind === 'task' ? esc(run.title.replace(/^Доручення: /, '')) : run.result === 'done' ? `Готово, ${run.doneCount} з ${run.total}` : `Частково: не підтверджено ${run.reqTotal - run.reqDone}`;
+  return `<button type="button" class="row row-btn mem-row" data-tone="${k.tone}" data-act="deckOpen" data-kind="${sc.kind}" data-id="${esc(sc.id)}">
+    <span class="row-ic">${icon(k.icon)}</span>
+    <span class="row-main"><span class="row-title">${esc(sc.kind === 'task' ? 'Нове доручення' : sc.title)}</span><span class="row-meta"><span>${L.shortDate(t.date, L.todayKey())}, ${L.fmtHM(t.min)}</span><span>${res}</span></span></span>
+    ${icon('play', 'row-go')}
+  </button>`;
 }
 
 function render(app) {
@@ -32,23 +27,35 @@ function render(app) {
   const pr = run ? D.runProgress(run, runSc) : null;
   const tiles = ['med', 'tac', 'fire', 'go', 'task'].map((k) => {
     const sc = deck.scenarios.find((s) => s.kind === k);
-    return quickTile({ kind: D.KIND[k], sc, run: run && run.sid === sc.id ? run : null });
+    return quickTile({ kind: D.KIND[k], sc, run: run && sc && run.sid === sc.id ? run : null, fav: sc && deck.favs.includes(sc.id) });
   });
   const customs = deck.scenarios.filter((s) => s.kind === 'custom');
   tiles.push(quickTile({ kind: D.KIND.custom, sc: null, run: run && runSc?.kind === 'custom' ? run : null, count: customs.length }));
+  const favs = deck.favs.map((id) => scOf(app, id)).filter(Boolean);
+  const recent = D.recentScenarios(deck, 4);
   return `<div class="page">
-    <h1 class="large-title" data-title-anchor>Швидко</h1>
-    ${switcher('deck')}
-    <p class="page-sub">Раптове заняття чи доручення — чекліст за один дотик</p>
-    ${run ? `<button type="button" class="run-banner" data-act="dkResume">${miniRing({ key: 'deck-banner', value: pr.done, total: pr.total, dim: 44 })}<div><b>Триває: ${esc(run.title)}</b><span>Виконано ${pr.done} з ${pr.total} · обовʼязкових ${pr.reqDone} з ${pr.reqTotal}</span></div>${icon('chev', 'row-chev')}</button>` : ''}
+    ${photoHead({ title: 'Швидка дія', sub: 'Плани змінилися — потрібний сценарій за один-два дотики' })}
+    ${run && runSc ? `<button type="button" class="run-banner" data-act="dkResume">${miniRing({ key: 'deck-banner', value: pr.done, total: pr.total, dim: 44, tone: 'blue' })}<span class="rb-main"><b>Триває: ${esc(run.title)}</b><span>Виконано ${pr.done} з ${pr.total}, обовʼязкових ${pr.reqDone} з ${pr.reqTotal}</span></span>${icon('chev', 'row-chev')}</button>` : ''}
+    ${favs.length ? `<section class="section" aria-labelledby="favH">
+      <div class="sec-row"><h2 class="sec-h" id="favH">${icon('star', 'sec-ic')}Обране</h2></div>
+      <div class="fav-row">${favs.map((sc) => `<button type="button" class="fav-btn" data-tone="${D.KIND[sc.kind].tone}" data-act="deckOpen" data-kind="${sc.kind}" data-id="${esc(sc.id)}">${icon(D.KIND[sc.kind].icon)}<span>${esc(sc.title)}</span></button>`).join('')}</div>
+    </section>` : ''}
     <div class="deck-grid">${tiles.join('')}</div>
-    <section class="section" aria-labelledby="runsH">
-      <div class="sec-row"><h2 class="sec-h" id="runsH">Останні запуски</h2></div>
-      ${deck.runs.length ? `<div class="list runs">${deck.runs.slice(0, 6).map(runRow).join('')}</div>` : '<p class="foot" style="margin-top:0">Тут зʼявиться підсумок кожного сценарію: коли, скільки кроків і чи все обовʼязкове підтверджено.</p>'}
-    </section>
-    <p class="foot">Сценарії допомагають організувати особисті справи й навчальні заняття. Склад кожного можна змінити: ${icon('edit')} у чеклісті.</p>
+    ${recent.length ? `<section class="section" aria-labelledby="recH">
+      <div class="sec-row"><h2 class="sec-h" id="recH">Останні використані</h2></div>
+      <div class="list">${recent.map((x) => memoryRow(app, x)).join('')}</div>
+    </section>` : ''}
+    <button type="button" class="row row-btn tools-row" data-act="tab" data-tab="tools">
+      <img class="tools-row-bg" src="abstract-07.webp" alt="" loading="lazy" decoding="async"><span class="tools-row-shade" aria-hidden="true"></span>
+      <span class="row-ic">${icon('apps')}</span>
+      <span class="row-main"><span class="row-title">Інструменти</span><span class="row-meta">Ваші сайти й застосунки одним дотиком: ${app.state.tools.length}</span></span>
+      ${icon('chev', 'row-chev')}
+    </button>
+    <p class="foot">Сценарії допомагають організувати навчальні заняття й особисті збори. Склад кожного можна змінити (${icon('edit')} у чеклісті), а зірочкою — додати в «Обране».</p>
   </div>`;
 }
+
+const backdrop = () => ({ src: 'quick-action-visual.webp', kind: 'header', pos: '50% 34%' });
 
 /* ---------- Екран сценарію ---------- */
 
@@ -58,28 +65,32 @@ function runHtml(app) {
   if (!run || !sc) return '';
   const k = D.KIND[sc.kind];
   const pr = D.runProgress(run, sc);
+  const fav = app.state.deck.favs.includes(sc.id);
   const steps = sc.steps.map((s) => checklistItem({ id: s.id, text: s.t, on: !!run.checked[s.id], act: 'dkStep', req: s.req })).join('');
   return `<div class="scr" data-tone="${k.tone}">
     <header class="scr-head">
       <button type="button" class="link" data-act="dkClose">Згорнути</button>
       <span class="scr-head-t">Сценарій</span>
-      <button type="button" class="icon-btn" data-act="dkEdit" data-id="${esc(sc.id)}" aria-label="Змінити кроки сценарію">${icon('edit')}</button>
+      <span class="scr-head-acts">
+        <button type="button" class="icon-btn${fav ? ' on' : ''}" data-act="dkFav" data-id="${esc(sc.id)}" aria-pressed="${fav}" aria-label="${fav ? 'Прибрати з обраного' : 'Додати в обране'}">${icon('star', fav ? 'fill' : '')}</button>
+        <button type="button" class="icon-btn" data-act="dkEdit" data-id="${esc(sc.id)}" aria-label="Змінити кроки сценарію">${icon('edit')}</button>
+      </span>
     </header>
     <div class="scr-hero">
       <div class="scr-ic">${icon(k.icon)}</div>
       <h1 class="scr-title">${esc(sc.title)}</h1>
       <p class="scr-sub">${esc(k.desc)}</p>
       <div class="scr-prog" aria-live="polite">
-        ${miniRing({ key: `run-${run.id}`, value: pr.done, total: pr.total, dim: 56 })}
+        ${miniRing({ key: `run-${run.id}`, value: pr.done, total: pr.total, dim: 52 })}
         <div><b>${pr.done}/${pr.total}</b><span>кроків</span></div>
         <div><b>${pr.reqDone}/${pr.reqTotal}</b><span>обовʼязкових</span></div>
       </div>
     </div>
     ${sc.steps.length ? `<div class="cl" role="group" aria-label="Кроки">${steps}</div>` : emptyState({ ic: 'list', title: 'У сценарії немає кроків', text: 'Додайте кроки кнопкою редагування вгорі.' })}
     <h3 class="sub-h">Нотатка</h3>
-    <textarea class="textarea" id="dkNote" rows="3" maxlength="2000" data-change="dkNote" placeholder="${sc.kind === 'task' ? 'Суть доручення, хто дав, строк…' : 'Необовʼязково'}">${esc(run.note)}</textarea>
+    <textarea class="textarea" id="dkNote" rows="3" maxlength="2000" data-change="dkNote" placeholder="Необовʼязково">${esc(run.note)}</textarea>
     <div class="scr-foot">
-      <button type="button" class="btn btn-primary btn-xl btn-block" data-act="dkFinish">${icon('check')}${pr.complete ? 'Завершити — усе підтверджено' : 'Завершити'}</button>
+      <button type="button" class="btn btn-primary btn-xl btn-block" data-act="dkFinish">${icon('check')}${pr.complete ? 'Завершити: усе підтверджено' : 'Завершити'}</button>
       <p class="hint">${pr.complete ? 'Усі обовʼязкові кроки підтверджено.' : `Не підтверджено обовʼязкових: ${pr.reqTotal - pr.reqDone}. «Готово» буде лише після них.`}</p>
     </div>
   </div>`;
@@ -87,18 +98,15 @@ function runHtml(app) {
 
 function resultHtml(app, r) {
   const sc = scOf(app, r.sid);
-  const k = D.KIND[r.kind];
   const mins = Math.max(1, Math.round((r.finishedAt - r.startedAt) / 60000));
   const done = r.result === 'done';
-  const noteTitle = r.note.split('\n').map((x) => x.trim()).find(Boolean) || '';
-  return `<div class="scr" data-tone="${k.tone}">
+  return `<div class="scr">
     <header class="scr-head"><span></span><span class="scr-head-t">Результат</span><button type="button" class="link strong" data-act="dkClose">Готово</button></header>
     <div class="result-card" data-r="${r.result}">
       <span class="big-check${done ? '' : ' partial'}">${icon(done ? 'check' : 'alert')}</span>
       <h2>${done ? 'Готово' : 'Завершено частково'}</h2>
-      <p>${esc(r.title)} · ${r.doneCount} з ${r.total} кроків · ${L.fmtDur(mins)}</p>
+      <p>${esc(r.title)}: ${r.doneCount} з ${r.total} кроків, ${L.fmtDur(mins)}</p>
       ${done ? '' : `<ul>${r.missing.map((m) => `<li>${icon('alert')}<span>Не підтверджено: ${esc(m)}</span></li>`).join('')}</ul>`}
-      ${r.kind === 'task' ? `<button type="button" class="btn btn-primary btn-block" data-act="dkToTask" data-id="${esc(r.id)}">${icon('plus')}Додати в справи${noteTitle ? `: «${esc(noteTitle.slice(0, 40))}»` : ''}</button>` : ''}
       ${!done && sc ? `<button type="button" class="btn btn-tinted btn-block" data-act="dkRestart" data-id="${esc(sc.id)}">${icon('reset')}Почати знову</button>` : ''}
       <button type="button" class="btn btn-quiet btn-block" data-act="dkClose">Закрити</button>
     </div>
@@ -147,6 +155,38 @@ async function startScenario(app, sc, from) {
   show(app, from);
 }
 
+/* ---------- Несподіване доручення: швидка форма ---------- */
+
+function assignHtml(app) {
+  const today = app.today;
+  const tom = L.addDays(today, 1);
+  return `<div class="scr assign-scr" data-tone="moon">
+    <header class="scr-head"><button type="button" class="link" data-act="dkClose">Закрити</button><span class="scr-head-t">Несподіване доручення</span><span></span></header>
+    <form class="assign" data-submit="asSave" autocomplete="off">
+      <div class="scr-hero"><div class="scr-ic">${icon('clipboard')}</div><h1 class="scr-title">Що потрібно зробити?</h1><p class="scr-sub">Хвилина на запис — і доручення вже у справах.</p></div>
+      <div class="list"><label class="row field"><textarea class="input-plain as-what" name="what" rows="2" maxlength="300" placeholder="Суть доручення" aria-label="Що зробити" data-focus></textarea></label></div>
+      <h3 class="sub-h">До якого часу</h3>
+      <div class="due">
+        <button type="button" class="chip plain" data-act="setDue" data-v="${today}" aria-pressed="true">Сьогодні</button>
+        <button type="button" class="chip plain" data-act="setDue" data-v="${tom}" aria-pressed="false">Завтра</button>
+        <input class="date-input" type="date" name="due" value="${today}" data-change="dueInput" aria-label="Дата">
+        <input class="time-input" type="time" name="time" aria-label="Час">
+      </div>
+      <h3 class="sub-h">Пріоритет</h3>
+      ${seg('Пріоритет', L.PRIORITIES.map((p) => ({ id: p.id, name: p.short })), 1, 'formSeg', 'pr')}
+      <input type="hidden" name="pr" value="1">
+      <h3 class="sub-h">Що необхідно</h3>
+      <textarea class="textarea" name="needs" rows="3" maxlength="1500" placeholder="Документи, люди, транспорт… Кожен пункт — з нового рядка, стане кроком справи"></textarea>
+      <div class="scr-foot"><button type="submit" class="btn btn-primary btn-xl btn-block">${icon('plus')}Додати в справи</button>
+      <p class="hint">Дата й час стануть дедлайном. Особисту організацію записуйте без оперативних відомостей.</p></div>
+    </form>
+  </div>`;
+}
+
+function openAssign(app, from) {
+  openScreen(assignHtml(app), { label: 'Несподіване доручення', from, bg: 'abstract-06.webp', bgPos: 'center 30%', cls: 'soft-bg' });
+}
+
 /* ---------- Редактор сценарію ---------- */
 
 function stepRowEd(s) {
@@ -163,7 +203,7 @@ function openEditor(app, sc) {
   openSheet(`<form class="sheet-form" data-submit="scSave" data-id="${esc(s.id)}" autocomplete="off">
     ${sheetHead(isNew ? 'Новий сценарій' : 'Сценарій', { cancel: 'Скасувати', done: 'Зберегти', submit: true })}
     <div class="list"><label class="row field"><input class="input-plain" name="title" value="${esc(s.title)}" placeholder="Назва сценарію" maxlength="60" aria-label="Назва сценарію"${isNew ? ' data-focus' : ''}></label></div>
-    <h3 class="sub-h">Кроки · ${icon('shield', 'crit')} — обовʼязкові</h3>
+    <h3 class="sub-h">Кроки, ${icon('shield', 'crit')} — обовʼязкові</h3>
     <div class="list sc-steps">${s.steps.map(stepRowEd).join('')}</div>
     <button type="button" class="row row-add" style="margin-top:6px" data-act="scAdd">${icon('plus')}<span>Додати крок</span></button>
     <p class="hint">Сценарій завершиться як «Готово», лише коли підтверджено всі обовʼязкові кроки.</p>
@@ -178,7 +218,8 @@ function openEditor(app, sc) {
 const actions = {
   async deckOpen(app, el) {
     const kind = el.dataset.kind;
-    if (kind === 'custom') {
+    if (kind === 'task') { openAssign(app, el); return; }
+    if (kind === 'custom' && !el.dataset.id) {
       const customs = app.state.deck.scenarios.filter((s) => s.kind === 'custom');
       if (!customs.length) { openEditor(app, null); return; }
       const v = await choiceSheet({
@@ -210,6 +251,13 @@ const actions = {
     if (!app.state.deck.active) return;
     app.commit((s) => { s.deck.active.note = el.value.slice(0, 2000); }, { render: false });
   },
+  dkFav(app, el) {
+    let on = false;
+    app.commit((s) => { on = D.toggleFav(s.deck, el.dataset.id); }, { render: false });
+    haptic();
+    if ($('#screen').open) updateScreen(runHtml(app));
+    toast(on ? 'Додано в обране' : 'Прибрано з обраного', null, 1800, on ? 'star' : '');
+  },
   async dkFinish(app) {
     const run = app.state.deck.active;
     if (!run) return;
@@ -229,22 +277,28 @@ const actions = {
     let r = null;
     app.commit((s) => { r = D.finishRun(s.deck, sc, Date.now()); }, { render: false });
     if (r?.result === 'done') haptic();
-    updateScreen(resultHtml(app, r));
+    setScreenBg('abstract-05.webp', 'center 30%');
+    updateScreen(resultHtml(app, r), { top: 0 });
   },
   dkRestart(app, el) {
     const sc = scOf(app, el.dataset.id);
     if (!sc) return;
     app.commit((s) => D.startRun(s.deck, sc, Date.now()), { render: false });
-    updateScreen(runHtml(app));
+    setScreenBg('');
+    updateScreen(runHtml(app), { top: 0 });
     animateRings($('#screen'));
   },
-  dkToTask(app, el) {
-    const r = app.state.deck.runs.find((x) => x.id === el.dataset.id);
-    if (!r) return;
-    const lines = r.note.split('\n').map((x) => x.trim()).filter(Boolean);
-    const title = (lines[0] || `Доручення від ${L.dayMonth(app.today)}`).slice(0, 300);
-    const t = addTask(app, title, 1, app.today, { note: lines.slice(1).join('\n'), cat: 'work' });
-    if (t) { closeScreen(); toast('Доручення додано в справи', { label: 'Відкрити', run: () => app.go('tasks') }); }
+  asSave(app, form) {
+    const f = form.elements;
+    const what = f.what.value.trim();
+    if (!what) { f.what.focus(); toast('Опишіть, що потрібно зробити'); return; }
+    const data = D.assignmentTask({ what, date: f.due.value, time: f.time.value, pr: f.pr.value, needs: f.needs.value }, app.today);
+    const t = addTask(app, data.title, data.pr, data.due, data);
+    if (!t) return;
+    app.commit((s) => D.logAssignment(s.deck, t.title, Date.now()));
+    haptic();
+    closeScreen();
+    toast('Доручення додано в справи', { label: 'Відкрити', run: () => app.go('tasks') }, 0, 'check');
   },
   dkEdit(app, el) {
     const sc = scOf(app, el.dataset.id);
@@ -285,7 +339,7 @@ const actions = {
     closeSheet();
     if (app.state.deck.active && $('#screen').open) updateScreen(runHtml(app));
     else app.render();
-    toast('Сценарій збережено');
+    toast('Сценарій збережено', null, 1800, 'check');
   },
   async scReset(app, el) {
     const sc = scOf(app, el.dataset.id);
@@ -307,10 +361,11 @@ const actions = {
     if (!ok) return;
     app.commit((s) => {
       s.deck.scenarios = s.deck.scenarios.filter((x) => x.id !== sc.id);
+      s.deck.favs = s.deck.favs.filter((x) => x !== sc.id);
       if (s.deck.active?.sid === sc.id) s.deck.active = null;
     }, { render: false });
     if ($('#screen').open) closeScreen(); else app.render();
   },
 };
 
-export default { title: 'Швидко', render, actions };
+export default { title: 'Швидка дія', render, backdrop, actions };
