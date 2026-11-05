@@ -1,24 +1,28 @@
 // ОПОРА 365 — вітальний екран першого запуску: одна сторінка про філософію, без обовʼязкового навчання.
+// Зображення — окремо, як предмет на сцені; текст — під ним, на спокійному тлі; одна головна дія.
 import { esc, icon, openScreen, closeScreen } from './ui.js';
 
+// Пʼять запитань, на які відповідає застосунок. Відповіді — у самому застосунку.
 const POINTS = [
-  { ic: 'sun', q: 'Що зараз найважливіше?', a: 'Одна наступна дія і чому саме вона' },
-  { ic: 'pin', q: 'Що я можу забути?', a: '«Не забути» на виду, доки ви не вирішите' },
-  { ic: 'shieldCheck', q: 'Що потрібно перевірити?', a: 'Лише реальні статуси спорядження' },
-  { ic: 'chevrons', q: 'Плани раптово змінилися?', a: 'Потрібний сценарій за один-два дотики' },
-  { ic: 'moon', q: 'Що зроблено, а що залишилося?', a: 'Вечірній підсумок за хвилину' },
+  { ic: 'sun', q: 'Що зараз найважливіше?' },
+  { ic: 'pin', q: 'Що я можу забути?' },
+  { ic: 'shieldCheck', q: 'Що потрібно перевірити?' },
+  { ic: 'chevrons', q: 'Плани раптово змінилися?' },
+  { ic: 'moon', q: 'Що зроблено, а що залишилося?' },
 ];
 
 function html() {
   return `<div class="scr welcome-scr">
-    <div class="welcome-space" aria-hidden="true"></div>
+    <div class="welcome-hero" aria-hidden="true"><img src="onboarding.webp" alt="" decoding="async"></div>
     <div class="welcome-body">
-      <h1 class="welcome-title">ОПОРА 365</h1>
-      <p class="welcome-lead">Менше часу на організацію — більше на життя.</p>
-      <ul class="welcome-points">${POINTS.map((p) => `<li>${icon(p.ic)}<span><b>${esc(p.q)}</b>${esc(p.a)}</span></li>`).join('')}</ul>
-      <button type="button" class="btn btn-primary btn-xl btn-block" data-act="welcomeStart" data-focus>Почати</button>
-      <button type="button" class="btn btn-glass btn-block" data-act="welcomeMorning">${icon('sunrise')}Спершу налаштувати ранок</button>
-      <p class="foot center">Дані зберігаються лише на цьому пристрої.</p>
+      <h1 class="welcome-title" tabindex="-1" data-focus>ОПОРА 365</h1>
+      <p class="welcome-lead">Менше часу на організацію.<br>Більше — на життя.</p>
+      <ul class="welcome-points">${POINTS.map((p) => `<li><span class="welcome-ic">${icon(p.ic)}</span>${esc(p.q)}</li>`).join('')}</ul>
+      <div class="welcome-acts">
+        <button type="button" class="btn btn-primary btn-xl btn-block" data-act="welcomeStart">Почати</button>
+        <button type="button" class="welcome-link" data-act="welcomeMorning">Спершу налаштувати ранок</button>
+        <p class="welcome-note">Дані зберігаються лише на цьому пристрої.</p>
+      </div>
     </div>
   </div>`;
 }
@@ -26,8 +30,6 @@ function html() {
 export function openWelcome(app) {
   openScreen(html(), {
     label: 'Вітаємо в ОПОРА 365',
-    bg: 'onboarding.webp',
-    bgPos: 'center 24%',
     cls: 'welcome',
     onClose: () => {
       if (!app.state.settings.onboarded) app.commit((s) => { s.settings.onboarded = true; });

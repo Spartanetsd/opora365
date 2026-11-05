@@ -999,23 +999,52 @@ form[data-type="must"] .only-task, form[data-type="task"] .only-must, form[data-
 :root[data-scheme="light"] .has-bg .scr-foot { --foot-bg: rgb(236, 241, 247); }
 .scr-foot .hint { text-align: center; }
 
-/* Вітальний екран */
-.screen.welcome .scr-bg img { opacity: 1; height: 64%; object-position: center 22%; }
-.screen.welcome .scr-bg::after { background: linear-gradient(180deg, rgba(8, 13, 22, .1) 0%, rgba(8, 13, 22, .05) 30%, rgba(8, 13, 22, .7) 52%, #080D16 64%); }
-:root[data-scheme="light"] .screen.welcome .scr-bg { background: var(--c-bg); }
-:root[data-scheme="light"] .screen.welcome .scr-bg::after { background: linear-gradient(180deg, rgba(8, 13, 22, .1) 0%, rgba(8, 13, 22, .05) 30%, rgba(8, 13, 22, .7) 52%, #080D16 64%); }
-.screen.welcome { --text: #F4F7FB; --text-2: #A0AEC0; color: #F4F7FB; background: var(--c-bg); }
-.welcome-scr { display: flex; flex-direction: column; }
-.welcome-space { flex: 1 0 34vh; }
-.welcome-body { padding-bottom: 6px; }
-.welcome-title { margin: 0; font-family: var(--font-display); font-size: var(--t-display); font-weight: 700; letter-spacing: -.035em; line-height: 1; }
-.welcome-lead { margin: 10px 0 0; font-size: var(--t-lead); color: #C9D3E0; line-height: 1.4; }
-.welcome-points { display: grid; gap: 12px; margin: 22px 0 24px; padding: 0; list-style: none; }
-.welcome-points li { display: flex; align-items: flex-start; gap: 12px; font-size: var(--t-small); color: #A0AEC0; line-height: 1.38; }
-.welcome-points .i { flex: none; width: 22px; height: 22px; margin-top: 1px; color: #63D8FF; }
-.welcome-points b { display: block; color: #F4F7FB; font-weight: 650; }
-.welcome .btn-glass { margin-top: 10px; color: #F4F7FB; background: rgba(244, 247, 251, .1); border-color: rgba(244, 247, 251, .16); }
-.welcome .btn-primary { background: linear-gradient(135deg, #63D8FF, #58DCC5); color: #04111B; }
+/* Вітальний екран — як сцена презентації: зображення окремо, ніщо його не перекриває;
+   під ним на спокійному тлі назва, одна думка, пʼять запитань і одна головна дія. Завжди темний. */
+.screen.welcome { --text: #F4F7FB; --text-2: #A0AEC0; --mode-ink: #63D8FF; color: #F4F7FB; background: #080D16; color-scheme: dark; }
+.screen.welcome .ambient { display: none; }
+.welcome-scr { display: flex; flex-direction: column; padding-top: 0; padding-bottom: calc(var(--safe-b) + 8px); }
+/* Сцена стискається першою, якщо екран невисокий: текст і кнопки завжди вміщуються.
+   Геометрія: плитки починаються під годинником і «островом», світанок — над назвою.
+   --hh — висота сцени, --clear — де закінчується рядок стану, --ih — висота самого зображення. */
+.welcome-scr > .welcome-hero {
+  position: relative; flex: 0 1 auto; display: flex; justify-content: center; width: auto; max-width: none;
+  height: clamp(200px, 47svh, 460px); min-height: 150px; container-type: size;
+  margin: 0 calc(-1 * max(18px, var(--safe-r))) 0 calc(-1 * max(18px, var(--safe-l))); overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 52px), transparent 100%); mask-image: linear-gradient(180deg, #000 calc(100% - 52px), transparent 100%);
+}
+.welcome-hero img {
+  --hh: clamp(200px, 47svh, 460px);
+  --clear: max(calc(var(--safe-t) - 4px), 26px);
+  --ih: calc((var(--hh) * .86 - var(--clear)) / .716);
+  flex: none; display: block; width: auto; max-width: none; height: var(--ih); aspect-ratio: 1199 / 1312; margin-top: calc(var(--clear) - var(--ih) * .08);
+  -webkit-mask-image: radial-gradient(farthest-side at 50% 44%, #000 70%, transparent 100%); mask-image: radial-gradient(farthest-side at 50% 44%, #000 70%, transparent 100%);
+}
+@supports (height: 1cqh) { .welcome-hero img { --hh: 100cqh; } }
+.welcome-scr > .welcome-body { flex: 1 0 auto; display: flex; flex-direction: column; align-items: center; max-width: 430px; text-align: center; }
+.welcome-title { margin: 8px 0 0; font-family: var(--font-display); font-size: 2.6rem; font-weight: 700; line-height: 1; letter-spacing: -.03em; }
+.welcome-title:focus { outline: none; }
+.welcome-lead { margin: 12px 0 0; font-size: 1.12rem; line-height: 1.36; color: #B9C5D3; text-wrap: balance; }
+.welcome-points { display: grid; gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; text-align: left; }
+.welcome-points li { display: flex; align-items: center; gap: 14px; font-size: var(--t-body); font-weight: 560; line-height: 1.25; color: #E4EAF2; }
+.welcome-ic { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; color: #63D8FF; background: rgba(99, 216, 255, .09); box-shadow: inset 0 0 0 .5px rgba(99, 216, 255, .32), inset 0 1px 0 rgba(255, 255, 255, .06); }
+.welcome-ic .i { width: 17px; height: 17px; stroke-width: 1.8; }
+.welcome-acts { width: 100%; margin-top: auto; padding-top: 24px; }
+.welcome .btn-primary { background: linear-gradient(135deg, #63D8FF, #58DCC5); color: #04111B; box-shadow: 0 16px 36px -18px rgba(99, 216, 255, .8), 0 1px 0 rgba(255, 255, 255, .35) inset; }
+.welcome-link { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 46px; margin-top: 4px; border-radius: 12px; font-size: var(--t-body); font-weight: 600; color: #63D8FF; }
+.welcome-link:active { opacity: .6; }
+.welcome-note { margin: 2px 0 0; font-size: var(--t-meta); line-height: 1.4; color: #7F8DA3; text-wrap: balance; }
+@media (max-height: 740px) {
+  .welcome-title { font-size: 2.25rem; }
+  .welcome-lead { margin-top: 8px; font-size: 1.04rem; }
+  .welcome-points { gap: 6px; margin-top: 16px; }
+  .welcome-acts { padding-top: 18px; }
+}
+/* Одна мить руху: світанок — зображення проявляється, текст уже на місці. */
+@media (prefers-reduced-motion: no-preference) {
+  .welcome-hero img { animation: welcome-dawn 1.1s var(--ease) both; }
+}
+@keyframes welcome-dawn { from { opacity: 0; transform: scale(1.04); } to { opacity: 1; transform: none; } }
 
 /* Вечірній підсумок */
 .screen.evening .scr-bg img { opacity: .7; height: 58%; object-position: center 62%; }
