@@ -92,6 +92,9 @@ export function plural(n, [one, few, many]) {
 export const count = (n, forms) => `${n} ${plural(n, forms)}`;
 export const daysWord = (n) => count(n, ['день', 'дні', 'днів']);
 
+// Завершити речення крапкою, якщо вона ще не стоїть (скорочення «лист.» уже має крапку).
+export const dot = (s) => (/[.!?…]$/.test(s) ? s : `${s}.`);
+
 // Зворотний відлік: «12:05» (хв:с) до години, далі «1 год 05 хв».
 export function fmtClock(sec) {
   const s = Math.max(0, Math.round(sec));

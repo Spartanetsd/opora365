@@ -117,11 +117,78 @@ test('Підготовка вчасно, поточний крок, «Часу �
   const a = L.sessionStatus(s, session(6, 35), nov(6, 35));
   eq([a.level, a.remaining, a.toDep, a.spare], ['ok', 55, 60, 5]);
   const b = L.sessionStatus(s, session(6, 35), nov(6, 38));
-  eq([b.current.title, b.current.left, L.fmtHM(b.current.eta), b.remaining, b.index], ['Прокинутися', 2, '06:38', 52, 1]);
+  eq([b.current.title, b.current.left, L.fmtHM(b.current.start), L.fmtHM(b.current.end), b.remaining, b.index], ['Прокинутися', 2, '06:35', '06:40', 52, 1]);
   const c = L.sessionStatus(s, session(6, 55), nov(6, 55));
   eq([c.level, c.spare, c.altSpare], ['tight', -15, 17]);
   const d = L.sessionStatus(s, session(7, 20, { short: true }), nov(7, 20));
   eq([d.level, L.fmtHM(d.expected)], ['late', '07:43']);
+});
+
+// Ранок як у користувача: 7 кроків, 54 хв, вихід 06:30. О 06:26 п'ять кроків виконано.
+function userMorning() {
+  const s = L.defaultState();
+  const t = L.currentTpl(s);
+  const mk = (title, min, critical = false) => ({ id: L.uid(), title, min, short: critical ? min : Math.max(1, Math.round(min / 2)), critical, items: [], kind: '' });
+  t.arrival = '07:25'; t.transport = 'bus'; t.travel.bus = 35; t.buffer = 20;
+  t.steps = [mk('Прокинутися', 3), mk('Гігієна', 12, true), mk('Сніданок і вода', 12, true), mk('Особисті речі', 7), mk('Документи, телефон, заряд', 5, true), mk('Перевірка завдань', 10, true), mk('Одягнутися й вийти', 5)];
+  const ids = t.steps.map((x) => x.id);
+  const at = (h, m, sec = 0) => nov(h, m) + sec * 1000;
+  const done = { [ids[0]]: at(5, 39, 10), [ids[1]]: at(5, 51, 20), [ids[2]]: at(6, 13, 5), [ids[3]]: at(6, 20, 2), [ids[4]]: at(6, 20, 40) };
+  return { s, ids, ss: session(5, 36, { done }) };
+}
+
+test('Ранок: числа на екрані узгоджені між собою (06:26, запізнення)', () => {
+  const { s, ss } = userMorning();
+  const p = L.computePlan(L.currentTpl(s));
+  eq([L.fmtHM(p.departure), L.fmtHM(p.wake), p.total], ['06:30', '05:36', 54]);
+  const st = L.sessionStatus(s, ss, nov(6, 26) + 41000);
+  const c = st.current;
+  eq([c.title, L.fmtHM(c.start), c.left, L.fmtHM(c.end)], ['Перевірка завдань', '06:20', 4, '06:30'], 'поточний крок: з 06:20, ще 4 хв, до 06:30');
+  const next = st.rows.find((r) => r.state === 'todo' && r !== c);
+  eq(L.fmtHM(next.start), L.fmtHM(c.end), 'наступний крок починається, коли закінчується поточний');
+  eq([L.fmtHM(st.expected), st.depAt - st.expected, st.spare], ['06:35', -5, -5], 'вихід о 06:35 — рівно на 5 хв пізніше 06:30');
+  eq(st.level, 'late');
+  eq(st.toDep, 4, 'до виходу за годинником: 06:26 → 06:30');
+});
+
+test('Ранок: шкала часу йде за зростанням за будь-яких позначок', () => {
+  const { s, ids } = userMorning();
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let k = 0; k < 400; k++) {
+    const start = nov(5, 20) + Math.floor(rnd() * 40) * 60000;
+    const done = {}, skipped = {};
+    let t = start;
+    for (const id of ids) {
+      t += Math.floor(rnd() * 15 * 60000);
+      const r = rnd();
+      if (r < 0.45) done[id] = t; else if (r < 0.55) skipped[id] = rnd() < 0.5 ? true : t;
+    }
+    const now = Math.max(t, start) + Math.floor(rnd() * 30 * 60000);
+    const st = L.sessionStatus(s, session(5, 20, { startedAt: start, done, skipped, short: rnd() < 0.3 }), now);
+    const todo = st.rows.filter((r) => r.state === 'todo');
+    for (let i = 1; i < todo.length; i++) eq(todo[i].start, todo[i - 1].end, `крок ${i}: початок = кінець попереднього`);
+    for (const r of todo) ok(r.end >= r.start && r.left >= 0 && Number.isInteger(r.start) && Number.isInteger(r.end), 'цілі хвилини без відʼємних');
+    if (todo.length) eq(st.expected, todo[todo.length - 1].end, 'очікуваний вихід = кінець останнього кроку');
+    else eq(st.expected, st.now);
+    ok(st.expected >= st.now, 'вихід не раніше, ніж зараз');
+    eq(st.spare, st.depAt - st.expected);
+  }
+});
+
+test('Ранок: пропуск кроку теж рахується як позначка; сторонні позначки не впливають', () => {
+  const { s, ids, ss } = userMorning();
+  ss.skipped[ids[5]] = nov(6, 24);
+  const st = L.sessionStatus(s, ss, nov(6, 26));
+  eq([st.current.title, L.fmtHM(st.current.start), st.current.left], ['Одягнутися й вийти', '06:24', 3]);
+  const ss2 = { ...ss, skipped: {}, done: { ...ss.done, 'чужий-крок': nov(6, 25) } };
+  eq(L.fmtHM(L.sessionStatus(s, ss2, nov(6, 26)).current.start), '06:20', 'позначка кроку з іншого шаблону ігнорується');
+});
+
+test('Ранок: крок, що триває довше запланованого', () => {
+  const { s, ss } = userMorning();
+  const st = L.sessionStatus(s, ss, nov(6, 34));
+  eq([st.current.left, st.current.over, L.fmtHM(st.current.end), L.fmtHM(st.expected), st.spare], [0, 4, '06:34', '06:39', -9]);
 });
 
 test('Виконані кроки зменшують залишок; «Вихід без забутого» — лише ручні позначки', () => {
@@ -324,6 +391,15 @@ test('Наступна дія: прострочене «Не забути», с�
   eq(L.nextAction(s, nov(16, 0)).main.title, 'Звіт', 'нарада, що минула кілька годин тому, не випереджає «Обовʼязково»');
 });
 
+test('Пропущена подія лишається першою тим коротше, чим нижчий пріоритет', () => {
+  const s = fresh();
+  s.tasks.push(T('Звіт', 1, '2026-11-03', 1, { deadline: '2026-11-03' }), T('Подзвонити', 3, '2026-11-03', 2, { time: '19:30' }));
+  eq(L.nextAction(s, nov(19, 50)).main.title, 'Подзвонити', '20 хв після — ще першою');
+  eq(L.nextAction(s, nov(20, 10)).main.title, 'Звіт', '«Можна пізніше» через 40 хв — уже ні');
+  s.tasks[1].pr = 1;
+  eq(L.nextAction(s, nov(21, 0)).main.title, 'Подзвонити', '«Обовʼязково» — до 2 год після часу');
+});
+
 test('Наступна дія: дедлайн піднімає справу; «Обрати іншу» — ваш вибір першим до кінця дня', () => {
   const s = fresh();
   const a = T('Звіт', 1, '2026-11-03', 1);
@@ -371,7 +447,7 @@ test('Підсумок дня одним рядком', () => {
   const s = fresh();
   s.tasks.push(T('a', 1, '2026-11-02', 1), T('b', 2, '2026-11-03', 1));
   s.musts.push(L.newMust('m'));
-  eq(L.daySummary(s, nov(10, 0)), '2 справи, прострочено 1, не забути 1, 5 перевірок потрібно');
+  eq(L.daySummary(s, nov(10, 0)), '2 справи, з них прострочено 1, не забути 1, 5 перевірок потрібно');
 });
 
 /* ---------- Вечірній підсумок, тиждень, фокус ---------- */

@@ -37,16 +37,50 @@ export function haptic() {
 /* ---------- Коротке повідомлення ---------- */
 
 let toastTimer = 0;
+let toastAt = 0;
+// Відкрите модальне вікно перекриває решту сторінки, тому повідомлення показуємо всередині
+// верхнього відкритого вікна — інакше його не видно і кнопку «Скасувати» не натиснути.
+function toastHost() {
+  const open = $$('dialog').filter((d) => d.open && !d.classList.contains('closing'));
+  open.sort((a, b) => (+b.dataset.openedAt || 0) - (+a.dataset.openedAt || 0));
+  return open[0] || document.body;
+}
+// Перед заміною вмісту вікна повідомлення виносимо назовні — інакше воно зникне разом зі старим вмістом.
+function rescueToast(d) {
+  const el = $('#toast');
+  if (!el || !d.contains(el)) return false;
+  document.body.append(el);
+  return el.classList.contains('show');
+}
+function showModalTop(d) {
+  d.showModal();
+  d.dataset.openedAt = String(performance.now());
+}
+// Нове вікно відкрилося, поки видно повідомлення: якщо воно щойно зʼявилося (та сама дія) — переносимо
+// його у вікно, щоб його було видно; старе повідомлення просто ховаємо, щоб не закривало кнопки вікна.
+function adoptToast(d) {
+  const el = $('#toast');
+  if (!el || !el.classList.contains('show') || d.contains(el)) return;
+  if (Date.now() - toastAt < 400) d.append(el);
+  else { el.classList.remove('show'); clearTimeout(toastTimer); }
+}
+export function homeToast(from) {
+  const el = $('#toast');
+  if (el && from && from.contains(el)) toastHost().append(el);
+}
 // ic — піктограма підтвердження (наприклад, 'check' після збереження).
 export function toast(message, action = null, ms = 0, ic = '') {
   const el = $('#toast');
   if (!el) return;
+  const host = toastHost();
+  if (el.parentElement !== host) host.append(el);
   el.innerHTML = `${ic ? `<span class="toast-ic">${icon(ic)}</span>` : ''}<span class="toast-text">${esc(message)}</span>${action ? `<button type="button" class="toast-btn">${esc(action.label)}</button>` : ''}`;
   const hide = () => el.classList.remove('show');
   if (action) el.querySelector('.toast-btn').addEventListener('click', () => { hide(); action.run(); }, { once: true });
   el.classList.remove('show');
   void el.offsetWidth;
   el.classList.add('show');
+  toastAt = Date.now();
   clearTimeout(toastTimer);
   if (ms !== Infinity) toastTimer = setTimeout(hide, ms || (action ? 5000 : 2600));
 }
@@ -58,15 +92,20 @@ function syncModalClass() {
   document.documentElement.classList.toggle('modal-open', any);
 }
 
+let closeTimer = 0;
 export function openSheet(html, { onClose = null, label = 'Панель' } = {}) {
   const d = $('#sheet');
-  d.classList.remove('closing');
+  clearTimeout(closeTimer);
+  d.classList.remove('closing', 'dragging');
   d.style.transform = '';
   d.setAttribute('aria-label', label);
+  const kept = rescueToast(d);
   d.innerHTML = `<div class="sheet-grab" aria-hidden="true"><span></span></div><div class="sheet-body" tabindex="-1">${html}</div>`;
+  d.dataset.dirty = '';
   d.onCloseOnce = onClose;
-  if (!d.open) d.showModal();
+  if (!d.open) showModalTop(d);
   syncModalClass();
+  if (kept) d.append($('#toast')); else adoptToast(d);
   const f = d.querySelector('[data-focus]');
   if (f) f.focus();
   else d.querySelector('.sheet-body').focus({ preventScroll: true });
@@ -75,37 +114,90 @@ export function openSheet(html, { onClose = null, label = 'Панель' } = {})
 
 export function closeSheet() {
   const d = $('#sheet');
-  if (!d.open) return;
-  if (reduceMotion()) { d.close(); return; }
+  if (!d.open || d.classList.contains('closing')) return;
   d.classList.add('closing');
-  setTimeout(() => { d.classList.remove('closing'); d.style.transform = ''; if (d.open) d.close(); }, 200);
+  homeToast(d);
+  if (reduceMotion()) { d.close(); return; }
+  closeTimer = setTimeout(() => { d.classList.remove('closing'); d.style.transform = ''; if (d.open) d.close(); }, 200);
 }
 
-// Потягнути панель донизу, щоб закрити.
+// Чи можна закрити панель жестом або дотиком поза нею. Не можна, якщо у формі вже щось змінено:
+// введене не має зникати від випадкового руху. Тоді панель лише «пружинить», а закриває «Скасувати».
+const typing = (d) => !!document.activeElement && d.contains(document.activeElement) && document.activeElement.matches('input:not([type="checkbox"]), textarea, select');
+function guarded(d) {
+  return d.dataset.dirty === '1' && !!d.querySelector('form.sheet-form');
+}
+function nudge(d) {
+  if (reduceMotion() || !d.animate) return;
+  d.animate([{ transform: 'none' }, { transform: 'translateY(10px)' }, { transform: 'none' }], { duration: 260, easing: 'ease-out' });
+}
+
+// Закрити панель можна, потягнувши донизу смужку вгорі або заголовок панелі.
+// Прокручування вмісту (будь-якої сили й напрямку) панель не закриває.
 function enableDrag(d) {
-  let y0 = 0, dy = 0, t0 = 0, active = false;
+  let y0 = 0, x0 = 0, dy = 0, active = false, decided = false, trail = [];
   d.addEventListener('touchstart', (e) => {
-    const body = d.querySelector('.sheet-body');
-    const onGrab = e.target.closest('.sheet-grab, .sheet-head');
-    if (!onGrab && body && body.scrollTop > 0) return;
-    if (e.target.closest('input, textarea, select, .seg, .stepper')) return;
-    active = true; y0 = e.touches[0].clientY; dy = 0; t0 = Date.now();
+    active = false;
+    if (e.touches.length !== 1) return;
+    if (!e.target.closest('.sheet-grab, .sheet-head')) return;
+    if (e.target.closest('button, a, input, textarea, select, label')) return;
+    if (typing(d) || document.documentElement.classList.contains('kb-open')) return;
+    const t = e.touches[0];
+    active = true; decided = false; y0 = t.clientY; x0 = t.clientX; dy = 0; trail = [[e.timeStamp, t.clientY]];
   }, { passive: true });
   d.addEventListener('touchmove', (e) => {
     if (!active) return;
-    dy = Math.max(0, e.touches[0].clientY - y0);
-    if (dy > 4) { d.classList.add('dragging'); d.style.transform = `translateY(${dy}px)`; }
+    const t = e.touches[0];
+    const ddy = t.clientY - y0, ddx = t.clientX - x0;
+    if (!decided) {
+      if (Math.abs(ddy) < 8 && Math.abs(ddx) < 8) return;
+      decided = true;
+      // Лише рух донизу, переважно вертикальний.
+      if (ddy <= 0 || Math.abs(ddx) > Math.abs(ddy)) { active = false; return; }
+    }
+    dy = Math.max(0, ddy);
+    trail.push([e.timeStamp, t.clientY]);
+    if (trail.length > 6) trail.shift();
+    d.classList.add('dragging');
+    d.style.transform = `translateY(${guarded(d) ? Math.min(40, dy * 0.25) : dy}px)`;
   }, { passive: true });
   const end = () => {
     if (!active) return;
     active = false;
     d.classList.remove('dragging');
-    const fast = dy > 40 && dy / Math.max(1, Date.now() - t0) > 0.6;
-    if (dy > 110 || fast) closeSheet();
-    else d.style.transform = '';
+    const [ta, ya] = trail[0], [tb, yb] = trail[trail.length - 1];
+    const speed = (yb - ya) / Math.max(1, tb - ta); // пікс/мс на останньому відрізку руху
+    const close = decided && (dy > 140 || (dy > 70 && speed > 0.8));
+    d.style.transform = '';
+    if (close && !guarded(d)) closeSheet();
+    else if (close) nudge(d);
   };
   d.addEventListener('touchend', end);
   d.addEventListener('touchcancel', end);
+  // Будь-яка зміна у формі панелі: далі закривати лише кнопкою.
+  const mark = (e) => { if (e.target.closest('form.sheet-form')) d.dataset.dirty = '1'; };
+  d.addEventListener('input', mark);
+  d.addEventListener('change', mark);
+}
+
+// Дотик поза панеллю закриває її, лише якщо це справжній дотик (не прокручування) і почався він теж поза панеллю.
+function enableBackdrop(d) {
+  let down = null;
+  const outside = (e) => {
+    const r = d.getBoundingClientRect();
+    return e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right;
+  };
+  d.addEventListener('pointerdown', (e) => { down = e.target === d && outside(e) ? { x: e.clientX, y: e.clientY } : null; });
+  d.addEventListener('click', (e) => {
+    const start = down;
+    down = null;
+    if (e.target !== d || !start || !outside(e)) return;
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return;
+    // Відкрита клавіатура: перший дотик лише ховає її.
+    if (typing(d)) { document.activeElement.blur(); return; }
+    if (guarded(d)) { nudge(d); return; }
+    closeSheet();
+  });
 }
 
 export function sheetHead(title, { done = 'Готово', cancel = '', submit = false } = {}) {
@@ -165,14 +257,19 @@ export function screenOpen() { return $('#screen').open; }
 // from — елемент, з якого «виростає» екран (плитка, кнопка); анімація лише clip-path і opacity.
 export function openScreen(html, { onClose = null, label = 'Екран', from = null, cls = '', bg = '', bgPos = 'center' } = {}) {
   const d = $('#screen');
+  // Екран ще зникає після попереднього закриття — зупиняємо це, щоб не закрити новий.
+  if (d._fade) { d._fade.onfinish = null; d._fade.cancel(); d._fade = null; }
   const wasOpen = d.open;
   d.className = `screen ${cls}${bg ? ' has-bg' : ''}`.trim();
   d.setAttribute('aria-label', label);
+  const kept = rescueToast(d);
   d.innerHTML = bgLayer(bg, bgPos) + AMBIENT + html;
   d.onCloseOnce = onClose;
+  if (kept) d.append($('#toast'));
   if (!wasOpen) {
-    d.showModal();
+    showModalTop(d);
     syncModalClass();
+    adoptToast(d);
     if (from && !reduceMotion() && d.animate) {
       const r = from.getBoundingClientRect();
       const W = window.innerWidth, H = window.innerHeight;
@@ -197,8 +294,10 @@ export function updateScreen(html, { top = null } = {}) {
   const was = sc ? sc.scrollTop : 0;
   const ae = document.activeElement;
   const keep = ae && d.contains(ae) && ae.id ? ae.id : '';
-  for (const el of [...d.children]) if (!el.classList.contains('scr-bg') && !el.classList.contains('ambient')) el.remove();
+  for (const el of [...d.children]) if (!el.classList.contains('scr-bg') && !el.classList.contains('ambient') && el.id !== 'toast') el.remove();
   d.insertAdjacentHTML('beforeend', html);
+  const t = $('#toast');
+  if (t && d.contains(t)) d.append(t); // повідомлення — завжди поверх вмісту
   const sc2 = d.querySelector('.scr');
   if (sc2) sc2.scrollTop = top ?? was;
   if (keep) document.getElementById(keep)?.focus({ preventScroll: true });
@@ -215,22 +314,27 @@ export function setScreenBg(bg, pos = 'center') {
 
 export function closeScreen() {
   const d = $('#screen');
-  if (!d.open) return;
+  if (!d.open || d.classList.contains('closing')) return;
+  d.classList.add('closing');
+  homeToast(d);
   if (reduceMotion() || !d.animate) { d.close(); return; }
   const a = d.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.98)' }], { duration: 180, easing: 'ease-in' });
-  a.onfinish = () => { if (d.open) d.close(); };
+  d._fade = a;
+  a.onfinish = () => { d._fade = null; if (d.open) d.close(); };
 }
 
 export function initDialogs() {
   for (const d of $$('dialog')) {
     d.addEventListener('close', () => {
+      d.classList.remove('closing');
+      homeToast(d);
       syncModalClass();
       const fn = d.onCloseOnce;
       d.onCloseOnce = null;
       if (fn) fn();
     });
     if (d.id === 'sheet') {
-      d.addEventListener('click', (e) => { if (e.target === d) closeSheet(); });
+      enableBackdrop(d);
       enableDrag(d);
     }
   }

@@ -171,36 +171,58 @@ export function planTpl(state, nowLocal = localMin()) {
   return s ? tplById(state, s.tpl) : currentTpl(state);
 }
 
+// Ранок рахується в цілих хвилинах за годинником — так, як час показує телефон.
+// Тому все, що бачить людина, сходиться: «зараз 06:26, ще 4 хв — до 06:30».
+export const clockMin = (lm) => Math.floor(lm + 1e-6);
+// Позначка кроку — мітка часу в мс; у старих даних «пропущено» зберігалося без часу (true).
+export const markAt = (v) => (Number.isFinite(+v) && +v > 1e12 ? +v : 0);
+// Крок вважається розпочатим з моменту попередньої позначки, якщо вона була не давніше ніж 90 хв тому.
+const RUN_WINDOW = 90;
+
 function walk(state, session, short, now) {
   const plan = computePlan(tplById(state, session.tpl), short);
-  const lastMs = Math.max(session.startedAt, ...Object.values(session.done).map(Number));
-  const elapsed = now - localMin(lastMs);
+  // Відколи триває поточний крок: остання позначка серед кроків плану або початок підготовки.
+  let last = markAt(session.startedAt);
+  for (const s of plan.steps) last = Math.max(last, markAt(session.done[s.id]), markAt(session.skipped[s.id]));
+  const since = clockMin(localMin(last));
   const rows = [];
   let cursor = now, remaining = 0, current = null;
   for (const s of plan.steps) {
     const st = session.done[s.id] ? 'done' : session.skipped[s.id] ? 'skipped' : s.dur === 0 ? 'auto' : 'todo';
-    let left = 0;
-    const first = st === 'todo' && !current;
-    if (st === 'todo') left = first && elapsed >= 0 && elapsed <= 90 ? Math.max(1, s.dur - elapsed) : s.dur;
-    const row = { ...s, state: st, eta: st === 'todo' ? cursor : null, left, doneAt: Number(session.done[s.id]) || 0 };
-    if (first) current = row;
+    const row = { ...s, planStart: s.start, state: st, start: null, end: null, left: 0, over: 0, doneAt: markAt(session.done[s.id]), skipAt: markAt(session.skipped[s.id]) };
+    if (st === 'todo') {
+      let start = cursor, left = s.dur;
+      if (!current) {
+        const elapsed = now - since;
+        if (elapsed >= 0 && elapsed <= RUN_WINDOW) {
+          start = since;
+          left = Math.max(0, s.dur - elapsed);
+          row.over = Math.max(0, elapsed - s.dur);
+        }
+        current = row;
+      }
+      row.start = start;
+      row.left = left;
+      row.end = cursor + left;
+      cursor += left;
+      remaining += left;
+    }
     rows.push(row);
-    cursor += left;
-    remaining += left;
   }
   return { plan, rows, remaining, current };
 }
 
-// Стан ранкової підготовки на момент nowMs.
+// Стан ранкової підготовки на момент nowMs. Усі величини — цілі хвилини й узгоджені між собою:
+// expected = зараз + залишок кроків; spare = план виходу − expected (відʼємний — запізнення).
 export function sessionStatus(state, session, nowMs) {
-  const now = localMin(nowMs);
+  const now = clockMin(localMin(nowMs));
   const short = !!session.short;
   const main = walk(state, session, short, now);
   const alt = walk(state, session, true, now);
   const depAt = dayNum(session.date) * DAY + main.plan.departure;
-  const toDep = depAt - now;
-  const spare = toDep - main.remaining;
-  const altSpare = toDep - alt.remaining;
+  const expected = now + main.remaining;
+  const spare = depAt - expected;
+  const altSpare = depAt - (now + alt.remaining);
   let level = 'ok';
   if (spare < 0) level = !short && altSpare >= 0 ? 'tight' : 'late';
   const counted = main.rows.filter((r) => r.state !== 'auto');
@@ -209,8 +231,8 @@ export function sessionStatus(state, session, nowMs) {
   const finished = !main.current;
   const complete = finished && essDone === ess.length;
   return {
-    ...main, depAt, toDep, spare, altSpare, level, short,
-    expected: now + main.remaining,
+    ...main, now, depAt, toDep: depAt - now, spare, altSpare, level, short,
+    expected,
     finished,
     complete,
     needEss: finished && !complete,
@@ -224,7 +246,7 @@ export function sessionStatus(state, session, nowMs) {
 
 // Короткий підсумок ранку для головного екрана.
 export function morningSummary(state, nowMs) {
-  const now = localMin(nowMs);
+  const now = clockMin(localMin(nowMs));
   const session = activeSession(state, now);
   const tpl = session ? tplById(state, session.tpl) : currentTpl(state);
   const plan = computePlan(tpl);
@@ -545,7 +567,7 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     if (c) {
       const reason = st.level === 'ok' ? `Крок ${st.index} із ${st.count}, ${end} о ${fmtHM(st.plan.departure)}`
         : st.level === 'tight' ? `Часу обмаль: бракує ${fmtDur(-st.spare)}` : `Запізнення на ${fmtDur(-st.spare)}, ${end} о ${fmtHM(st.plan.departure)}`;
-      out.push({ key: `step:${c.id}`, kind: 'step', id: c.id, rank: 10, title: c.title, reason, at: c.eta + c.left, level: st.level === 'ok' ? 'normal' : 'warn', critical: c.critical, blocked: c.items.length > 0, icon: 'sunrise', defer: false });
+      out.push({ key: `step:${c.id}`, kind: 'step', id: c.id, rank: 10, title: c.title, reason, at: c.end, level: st.level === 'ok' ? 'normal' : 'warn', critical: c.critical, blocked: c.items.length > 0, icon: 'sunrise', defer: false });
     } else if (st.needEss) {
       out.push({ key: 'ess', kind: 'ess', rank: 10, title: 'Вихід без забутого', reason: `Перевірте перед виходом: ще ${st.essTotal - st.essDone} з ${st.essTotal}`, level: 'normal', icon: 'checkCircle', defer: false });
     }
@@ -586,8 +608,10 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     const pinned = tv.main === t && state.pin.date === today && state.pin.id === t.id;
     const dl = t.deadline ? diffDays(today, t.deadline) : null;
     let rank;
-    // Подія найближчої години (і до двох годин після її часу) — першою; давно минула стає звичайною справою.
-    if (at != null && at - now <= 60 && now - at <= 120) rank = 18;
+    // Подія найближчої години — першою. Пропущена лишається першою недовго (залежно від пріоритету:
+    // «Обовʼязково» — 2 год, «Важливо» — 1 год, «Можна пізніше» — 30 хв), далі стає звичайною справою.
+    const missWindow = t.pr === 1 ? 120 : t.pr === 2 ? 60 : 30;
+    if (at != null && at - now <= 60 && now - at <= missWindow) rank = 18;
     else if (pinned) rank = mode === 'rest' ? 31 : 19;
     else if (dl != null && dl <= 0) rank = mode === 'rest' ? 31 : 21;
     else if (mode === 'rest') rank = t.pr === 1 ? (overdue ? 31 : 32) : 60 + t.pr;
@@ -738,7 +762,7 @@ export function daySummary(state, nowMs = Date.now()) {
   const gs = gearSummary(state.gear, nowMs);
   const parts = [];
   if (tv.openCount) parts.push(count(tv.openCount, ['справа', 'справи', 'справ']));
-  if (tv.overdue.length) parts.push(`прострочено ${tv.overdue.length}`);
+  if (tv.overdue.length) parts.push(`з них прострочено ${tv.overdue.length}`);
   if (mv.active.length) parts.push(`не забути ${mv.active.length}`);
   if (gs.issues) parts.push(count(gs.issues, ['категорія з проблемами', 'категорії з проблемами', 'категорій з проблемами']));
   else if (gs.needs) parts.push(count(gs.needs, ['перевірка потрібна', 'перевірки потрібні', 'перевірок потрібно']));
@@ -988,7 +1012,7 @@ export function cleanState(raw, nowMs = Date.now()) {
   if (hasSession) {
     const done = {}, skipped = {}, checks = {}, ess = {};
     if (plain(rs.done)) for (const [k, v] of Object.entries(rs.done)) if (stamp(v)) done[k] = stamp(v);
-    if (plain(rs.skipped)) for (const [k, v] of Object.entries(rs.skipped)) if (v === true) skipped[k] = true;
+    if (plain(rs.skipped)) for (const [k, v] of Object.entries(rs.skipped)) if (v === true || markAt(v)) skipped[k] = markAt(v) || true;
     if (plain(rs.checks)) for (const [k, v] of Object.entries(rs.checks)) if (Array.isArray(v)) checks[k] = v.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < 12);
     if (plain(rs.ess)) for (const [k, v] of Object.entries(rs.ess)) if (stamp(v)) ess[k] = stamp(v);
     const tpl = morning.templates.some((t) => t.id === rs.tpl) ? rs.tpl : morning.active;

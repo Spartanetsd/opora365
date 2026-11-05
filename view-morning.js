@@ -10,13 +10,16 @@ const clamp = (v, lo, hi, d) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
 };
 const tplOf = (app) => L.currentTpl(app.state);
+// Число й одиниця не розриваються між рядками: «5 хв», «1 год».
+const nb = (s) => esc(s).replace(/(\d) (хв|год)/g, '$1&nbsp;$2');
 // Локальні хвилини → мітка часу (для живого відліку).
 const msAt = (localM, nowMs) => Math.round(nowMs + (localM - L.localMin(nowMs)) * 60000);
 
+// Один рядок стану. Числа беруться з тих самих цілих хвилин, що й шкала: «06:35» і «на 5 хв» завжди сходяться.
 function levelInfo(st, end) {
-  if (st.level === 'ok') return { level: 'ok', ic: 'checkCircle', text: `У графіку, запас ${L.fmtDur(st.spare)}` };
+  if (st.level === 'ok') return { level: 'ok', ic: 'checkCircle', text: st.spare ? `У графіку, запас ${L.fmtDur(st.spare)}` : 'У графіку, без запасу' };
   if (st.level === 'tight') return { level: 'tight', ic: 'clock', text: `Часу обмаль: бракує ${L.fmtDur(-st.spare)}` };
-  return { level: 'late', ic: 'clock', text: `${end} орієнтовно о ${L.fmtHM(st.expected)}, пізніше на ${L.fmtDur(-st.spare)}` };
+  return { level: 'late', ic: 'clock', text: `Орієнтовно о ${L.fmtHM(st.expected)}, на ${L.fmtDur(-st.spare)} пізніше` };
 }
 
 /* ---------- Верхня частина: час виходу й відлік ---------- */
@@ -26,16 +29,18 @@ function bigBlock(app, sm, st, nowMs) {
   const end = L.endLabel(sm.tpl);
   let count = '', pill = '';
   const depMs = msAt(sm.depAt, nowMs);
+  const toWhat = end === 'Вихід' ? 'виходу' : 'початку дня';
+  const countdown = () => `<p class="m-count">До ${toWhat} <b class="tnum" data-count-to="${depMs}">${L.fmtClock((depMs - nowMs) / 1000)}</b></p>`;
   if (sm.phase === 'running' && st) {
-    count = st.toDep > 0 ? `<p class="m-count">До ${end === 'Вихід' ? 'виходу' : 'початку дня'} <b class="tnum" data-count-to="${depMs}">${L.fmtClock(st.toDep * 60)}</b></p>` : `<p class="m-count is-late">${end} мав бути ${L.fmtDur(-st.toDep)} тому</p>`;
+    count = st.toDep > 0 ? countdown() : `<p class="m-count is-late">${end} за планом був о ${L.fmtHM(p.departure)}</p>`;
     const info = levelInfo(st, end);
-    pill = `<p class="pill" data-level="${info.level}">${icon(info.ic)}${esc(info.text)}</p>`;
+    pill = `<p class="pill" data-level="${info.level}">${icon(info.ic)}<span>${nb(info.text)}</span></p>`;
   } else if (sm.phase === 'finished') {
-    const diff = Math.round(sm.depAt - L.localMin(sm.session.finishedAt));
-    count = sm.toDep > 0 ? `<p class="m-count">До виходу <b class="tnum" data-count-to="${depMs}">${L.fmtClock(sm.toDep * 60)}</b></p>` : '';
-    pill = `<p class="pill" data-level="ok">${icon('checkCircle')}Готові${diff >= 0 ? `, запас ${L.fmtDur(diff)}` : ''}</p>`;
+    const diff = sm.depAt - L.clockMin(L.localMin(sm.session.finishedAt));
+    count = sm.toDep > 0 ? countdown() : '';
+    pill = `<p class="pill" data-level="ok">${icon('checkCircle')}Готові${diff > 0 ? `, запас ${L.fmtDur(diff)}` : ''}</p>`;
   } else if (sm.phase === 'window') {
-    count = `<p class="m-count">До ${end === 'Вихід' ? 'виходу' : 'початку дня'} <b class="tnum" data-count-to="${depMs}">${L.fmtClock(sm.toDep * 60)}</b></p>`;
+    count = countdown();
   } else if (sm.phase === 'after') {
     count = `<p class="m-count">${end} був о ${L.fmtHM(p.departure)}</p>`;
   } else {
@@ -65,8 +70,8 @@ function facts(sm) {
   const home = L.homeDay(t);
   return `<button type="button" class="facts" data-act="openRoute" aria-label="Маршрут і час: змінити">
     <span>${icon('sunrise')}Підйом <b class="tnum">${L.fmtHM(p.wake)}</b>${p.wakePrevDay ? ' (напередодні)' : ''}</span>
-    ${home ? '' : `<span>${icon(L.TR[t.transport].icon)}${esc(L.TR[t.transport].name)} <b>${p.travel} хв</b></span>`}
-    <span>${icon('clock')}Запас <b>${p.buffer} хв</b></span>
+    ${home ? '' : `<span>${icon(L.TR[t.transport].icon)}${esc(L.TR[t.transport].name)}${p.travel ? ` <b>${p.travel} хв</b>` : ''}</span>`}
+    <span>${icon('clock')}${p.buffer ? `Запас <b>${p.buffer} хв</b>` : 'Без запасу'}</span>
     <span>${icon('flag')}${home ? 'Справи з' : 'Прибуття'} <b class="tnum">${esc(t.arrival)}</b></span>
     <span class="facts-edit">${icon('sliders')}</span>
   </button>`;
@@ -81,7 +86,7 @@ function lateCard(st, end) {
     const can = st.level === 'tight';
     return `<section class="late-card" aria-label="Режим запізнення">
       <h3>${icon('clock')}Режим запізнення</h3>
-      <p>${can ? `Мінімальний набір кроків вкладається в час: запас ${L.fmtDur(st.altSpare)}.` : 'Навіть мінімальний набір не встигає, але скоротить запізнення.'} Критичні кроки не скорочуються.</p>
+      <p>${can ? `Мінімальний набір кроків вкладається в час${st.altSpare ? `: запас ${L.fmtDur(st.altSpare)}` : ''}.` : `Навіть мінімальний набір не встигає, але скоротить запізнення з ${L.fmtDur(-st.spare)} до ${L.fmtDur(-st.altSpare)}.`} Критичні кроки не скорочуються.</p>
       <ul>${rows.map((r) => `<li><span>${esc(r.title)}</span><span>${r.short === 0 ? 'пропустити' : `${r.min} → ${r.short} хв`}</span></li>`).join('')}</ul>
       <button type="button" class="btn btn-primary btn-block" data-tone="amber" data-act="shortOn">Увімкнути «Часу обмаль»</button>
     </section>`;
@@ -110,10 +115,13 @@ function currentCard(app, st) {
   } else if (c.kind === 'gear') {
     extra = `<button type="button" class="btn btn-tinted btn-block" style="margin-top:12px" data-act="mGearCheck">${icon('shieldCheck')}Перевірка перед чергуванням</button>`;
   }
+  // «Ще 4 хв, до 06:30» — рахується від моменту, коли крок став поточним.
+  const timing = c.left > 0 ? `Ще ${L.fmtDur(c.left)}, до ${L.fmtHM(c.end)}`
+    : c.over > 0 ? `Довше запланованого на ${L.fmtDur(c.over)}` : 'Запланований час вийшов';
   return `<div class="vt-current">
     <p class="vt-now">Зараз, крок ${st.index} із ${st.count}</p>
     <p class="vt-title">${esc(c.title)}${c.critical ? icon('shield', 'crit') : ''}</p>
-    <p class="vt-meta">${L.fmtDur(c.left)}, орієнтовно до ${L.fmtHM(c.eta + c.left)}${c.critical ? '. Критичний крок' : ''}</p>
+    <p class="vt-meta">${nb(timing)}${c.critical ? '. Критичний крок' : ''}</p>
     ${items}${extra}
     <div class="vt-actions">
       <button type="button" class="btn btn-primary btn-lg" data-tone="amber" data-act="stepDone" data-id="${esc(c.id)}"${blocked ? ' disabled' : ''}>${icon('check')}Готово</button>
@@ -129,10 +137,12 @@ function timeline(app, sm, st) {
   let rows;
   if (running || sm.phase === 'finished') {
     const live = st || L.sessionStatus(app.state, sm.session, Date.now());
+    // Час ліворуч: для виконаного — коли позначено, для поточного — коли почався, для наступних — коли орієнтовно почнуться.
+    const at = (ms) => (ms ? L.fmtHM(L.localMin(ms)) : '');
     rows = live.rows.map((r) => {
       const cur = live.current && r.id === live.current.id;
       const state = cur ? 'current' : r.state;
-      const time = r.state === 'done' ? L.fmtHM(L.localMin(r.doneAt)) : r.state === 'todo' ? L.fmtHM(r.eta) : L.fmtHM(r.start);
+      const time = r.state === 'done' ? at(r.doneAt) : r.state === 'skipped' ? at(r.skipAt) : r.state === 'todo' ? L.fmtHM(r.start) : '';
       const meta = r.state === 'done' ? 'зроблено' : r.state === 'skipped' ? 'пропущено' : r.state === 'auto' ? 'пропускається: часу обмаль' : `${r.dur} хв`;
       const body = cur ? currentCard(app, live) : `<button type="button" class="vt-item" data-act="stepToggle" data-id="${esc(r.id)}" role="checkbox" aria-checked="${r.state === 'done'}"${r.state === 'auto' ? ' disabled' : ''}>
           <span class="vt-title">${esc(r.title)}${r.critical ? icon('shield', 'crit') : ''}</span><span class="vt-meta">${meta}</span></button>`;
@@ -151,11 +161,13 @@ function timeline(app, sm, st) {
   }
   const doneN = rows.filter((r) => r.state === 'done' || r.state === 'skipped').length;
   const past = rows.length ? Math.round((doneN / (rows.length + 1)) * 100) : 0;
+  // Якщо не встигаєте — у шкалі орієнтовний час виходу, а план — у підписі. Шкала завжди йде за зростанням.
   const late = running && st && !st.finished && st.spare < 0;
-  const endMeta = late ? `за планом, орієнтовно о ${L.fmtHM(st.expected)}` : L.homeDay(sm.tpl) ? 'початок справ' : `прибуття о ${esc(sm.tpl.arrival)}`;
+  const endTime = late ? st.expected : sm.plan.departure;
+  const endMeta = late ? `за планом о ${L.fmtHM(sm.plan.departure)}, на ${L.fmtDur(-st.spare)} пізніше` : L.homeDay(sm.tpl) ? 'початок справ' : `прибуття о ${sm.tpl.arrival}`;
   const endRow = `<div class="vt-row vt-end${late ? ' late' : ''}" data-state="${sm.phase === 'finished' ? 'done' : 'todo'}">
-      <span class="vt-time">${L.fmtHM(sm.plan.departure)}</span><span class="vt-node" aria-hidden="true"></span>
-      <div class="vt-body"><div class="vt-item"><span class="vt-title">${esc(end)}</span><span class="vt-meta">${endMeta}</span></div></div></div>`;
+      <span class="vt-time">${L.fmtHM(endTime)}</span><span class="vt-node" aria-hidden="true"></span>
+      <div class="vt-body"><div class="vt-item"><span class="vt-title">${esc(end)}</span><span class="vt-meta">${nb(endMeta)}</span></div></div></div>`;
   return `<div class="vt" style="--past:${past}%" role="list" aria-label="Кроки ранку">
     ${rows.map((r) => `<div class="vt-row" data-state="${r.state}" role="listitem">
       <span class="vt-time">${r.time}</span>
@@ -208,8 +220,8 @@ function render(app) {
   } else if (sm.phase === 'window' || (sm.phase === 'before' && sm.toWake <= 180)) {
     action = `<button type="button" class="btn btn-primary btn-xl btn-block" data-tone="amber" data-act="startSession">${icon('play')}Почати ранок</button>`;
   }
-  return `<div class="page">
-    ${photoHead({ title: 'Мій ранок', sub: `${when}, ${L.dayMonth(sm.date)}. ${esc(sm.tpl.name)}, ${L.fmtDur(p.total)} на підготовку`, extra: bigBlock(app, sm, st, nowMs) })}
+  return `<div class="page page-morning">
+    ${photoHead({ title: 'Мій ранок', sub: `${when}, ${L.dayMonth(sm.date)}. ${esc(sm.tpl.name)}${running ? '' : `, ${L.fmtDur(p.total)} на підготовку`}`, extra: bigBlock(app, sm, st, nowMs) })}
     ${tplChips(app, sm)}
     ${facts(sm)}
     ${action}
@@ -382,7 +394,7 @@ const actions = {
     if (app.route.tab !== 'morning') app.go('morning'); else app.render();
   },
   stepDone(app, el) { haptic(); completeStep(app, el.dataset.id); },
-  stepSkip(app, el) { updateSession(app, (ss) => { ss.skipped[el.dataset.id] = true; }); },
+  stepSkip(app, el) { updateSession(app, (ss) => { ss.skipped[el.dataset.id] = Date.now(); }); },
   stepToggle(app, el) {
     const id = el.dataset.id;
     const ss = app.state.session;

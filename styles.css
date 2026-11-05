@@ -175,14 +175,15 @@ img { max-width: 100%; }
 /* ---------- Фонове зображення сторінки ---------- */
 
 .backdrop {
+  --fit: 0px; /* нижній край заголовка сторінки — задає app.js */
   position: absolute; left: 0; right: 0; top: 0;
-  height: var(--hdr-h);
+  height: max(var(--hdr-h), var(--fit));
   overflow: hidden;
   pointer-events: none;
   background: var(--bg-deep);
 }
-.backdrop[data-kind="hero"] { height: var(--hero-h); }
-.backdrop[data-kind="band"] { height: var(--band-h); }
+.backdrop[data-kind="hero"] { height: max(var(--hero-h), var(--fit)); }
+.backdrop[data-kind="band"] { height: max(var(--band-h), var(--fit)); }
 .bd-img {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
@@ -208,11 +209,11 @@ img { max-width: 100%; }
 :root[data-scheme="light"] .backdrop[data-kind="header"], :root[data-scheme="light"] .backdrop[data-kind="band"] {
   left: max(12px, var(--safe-l)); right: max(12px, var(--safe-r));
   top: calc(var(--safe-t) + var(--bar-h) + 2px);
-  height: calc(var(--hdr-h) - var(--safe-t) - var(--bar-h) - 2px);
+  height: calc(max(var(--hdr-h), var(--fit)) - var(--safe-t) - var(--bar-h) - 2px);
   border-radius: var(--r-xl);
   box-shadow: var(--sh-2);
 }
-:root[data-scheme="light"] .backdrop[data-kind="band"] { height: calc(var(--band-h) - var(--safe-t) - var(--bar-h) + 30px); }
+:root[data-scheme="light"] .backdrop[data-kind="band"] { height: calc(max(var(--band-h) + 32px, var(--fit)) - var(--safe-t) - var(--bar-h) - 2px); }
 :root[data-scheme="light"] .backdrop[data-kind="header"] .bd-shade, :root[data-scheme="light"] .backdrop[data-kind="band"] .bd-shade {
   background: linear-gradient(180deg, rgba(8, 13, 22, 0) 30%, rgba(8, 13, 22, .7) 100%);
 }
@@ -480,7 +481,9 @@ button.row:active, .row-main:active { background: var(--track); }
 :root[data-bd=""] .ph { color: var(--text); }
 .ph-title { margin: 0; font-family: var(--font-display); font-size: var(--t-h1); font-weight: 700; line-height: 1.08; letter-spacing: -.028em; text-shadow: 0 2px 18px rgba(0, 0, 0, .35); }
 .ph-sub { margin: 6px 0 0; font-size: var(--t-small); line-height: 1.4; color: rgba(244, 247, 251, .82); text-shadow: 0 1px 10px rgba(0, 0, 0, .4); }
-:root[data-scheme="light"][data-bd="header"] .ph, :root[data-scheme="light"][data-bd="band"] .ph { padding: 0 16px 14px; }
+:root[data-scheme="light"][data-bd="header"] .ph, :root[data-scheme="light"][data-bd="band"] .ph { padding: 16px 16px 14px; }
+/* На зображенні ранку праворуч — декоративні піктограми кроків: текст тримаємо лівіше. */
+.page-morning .ph-sub, .page-morning .m-count, .page-morning .pill { max-width: min(68%, 252px); text-wrap: balance; }
 :root[data-scheme="light"][data-bd="band"] .ph { min-height: calc(var(--band-h) - var(--safe-t) - var(--bar-h) + 18px); }
 .page-plain { padding-top: 6px; }
 
@@ -1067,7 +1070,9 @@ form[data-type="must"] .only-task, form[data-type="task"] .only-must, form[data-
   transition: opacity var(--d1), transform var(--d3) var(--ease);
 }
 html.modal-open .toast { bottom: calc(var(--safe-b) + 18px + var(--kb)); }
-.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+/* Повідомлення не перехоплює дотики: під ним можна натиснути кнопку; активна лише його власна кнопка. */
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: none; }
+.toast.show .toast-btn { pointer-events: auto; }
 .toast-ic { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: rgba(88, 220, 197, .2); color: #58DCC5; animation: pop var(--d3) var(--spring); }
 .toast-ic .i { width: 15px; height: 15px; stroke-width: 2.8; }
 .toast-btn { flex: none; min-height: 44px; padding: 8px 16px; border-radius: var(--r-pill); background: rgba(99, 216, 255, .16); color: #63D8FF; font-weight: 700; }

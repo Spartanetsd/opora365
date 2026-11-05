@@ -137,7 +137,7 @@ function render(app) {
   const tv = L.taskView(app.state.tasks, app.today, app.state.pin);
   const mv = L.mustView(app.state.musts, app.today);
   const counts = { work: tv.openCount + tv.upcoming.length + tv.nodate.length, musts: mv.open.length };
-  const subLine = `${L.longDate(app.today).replace(/^./, (x) => x.toUpperCase())}. ${tv.openCount ? `На сьогодні ${tv.openCount}` : 'На сьогодні вільно'}${tv.overdue.length ? `, прострочено ${tv.overdue.length}` : ''}`;
+  const subLine = `${L.longDate(app.today).replace(/^./, (x) => x.toUpperCase())}. ${tv.openCount ? `На сьогодні ${tv.openCount}` : 'На сьогодні вільно'}${tv.overdue.length ? `, з них прострочено ${tv.overdue.length}` : ''}`;
   const nav = `<div class="seg seg-nav" role="tablist" aria-label="Розділи справ">${SEGS.map((x) => `<button type="button" role="tab" aria-selected="${sub === x.id}" data-act="tab" data-tab="tasks" data-sub="${x.id === 'work' ? '' : x.id}"><span>${x.name}</span>${counts[x.id] ? `<span class="seg-n">${counts[x.id]}</span>` : ''}</button>`).join('')}</div>`;
   const body = sub === 'musts' ? renderMusts(app) : sub === 'archive' ? renderArchive(app) : renderWork(app);
   app.ui.flash = '';
@@ -393,7 +393,7 @@ export async function chooseDay(app, { title, text, hint = '', deadline = '' }) 
   if (!v) return null;
   if (v !== 'pick') return v;
   await new Promise((r) => setTimeout(r, 230));
-  return pickDate({ title, text, value: L.addDays(today, 1), min: L.addDays(today, 1), hint: hint || (deadline ? `Строк: ${L.shortDate(deadline, today)}. Він не зміниться.` : '') });
+  return pickDate({ title, text, value: L.addDays(today, 1), min: L.addDays(today, 1), hint: hint || (deadline ? `Строк не зміниться: ${L.shortDate(deadline, today)}` : '') });
 }
 
 /* ---------- Виконання й рішення ---------- */
@@ -475,7 +475,7 @@ function openMust(app, el) {
     </div>
     <h3 class="sub-h">Нотатка</h3>
     <textarea class="textarea" name="note" rows="3" maxlength="2000" placeholder="Необовʼязково">${esc(m.note)}</textarea>
-    <p class="hint">Додано ${L.shortDate(L.todayKey(m.createdAt), app.today)}${m.moved ? `, переносилося: ${m.moved}` : ''}. Не зникає, доки ви не вирішите.</p>
+    <p class="hint">${L.dot(`Додано ${L.shortDate(L.todayKey(m.createdAt), app.today)}${m.moved ? `, переносилося: ${m.moved}` : ''}`)} Не зникає, доки ви не вирішите.</p>
     <div class="stack">
       ${open ? `<div class="decide decide-lg" role="group" aria-label="Рішення">
         <button type="button" class="dbtn" data-tone="teal" data-act="mustDone" data-id="${esc(m.id)}">${icon('check')}<span>Виконати</span></button>

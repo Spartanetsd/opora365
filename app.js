@@ -16,7 +16,7 @@ import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.0.0';
+const VERSION = '3.0.1';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools, stats };
 const TABS = [
@@ -78,6 +78,7 @@ const app = {
     view.classList.toggle('enter', enter && !reduceMotion());
     if (keepId) document.getElementById(keepId)?.focus({ preventScroll: true });
     setBackdrop(mod.backdrop ? mod.backdrop(this) : null);
+    fitBackdrop();
     renderChrome();
     animateRings(view);
     try { mod.after?.(this, view); } catch (err) { console.error(err); }
@@ -199,6 +200,22 @@ function setBackdrop(spec) {
     el.prepend(img);
   }
   if (!el.querySelector('.bd-shade')) el.insertAdjacentHTML('beforeend', '<div class="bd-shade"></div>');
+}
+
+// Зображення завжди не нижче за заголовок над ним: на iPhone з високою «чубчиком» зоною
+// вміст (час виходу, відлік, стан) не повинен вилазити за край картинки.
+let fitRO = null;
+function fitBackdrop() {
+  const el = $('#backdrop');
+  const head = $('#view .ph, #view .today');
+  fitRO?.disconnect();
+  if (el.hidden || !head) { el.style.removeProperty('--fit'); return; }
+  const set = () => {
+    const bottom = head.getBoundingClientRect().bottom + window.scrollY;
+    el.style.setProperty('--fit', `${Math.ceil(bottom + (el.dataset.kind === 'hero' ? 8 : 16))}px`);
+  };
+  set();
+  if ('ResizeObserver' in window) { fitRO = new ResizeObserver(set); fitRO.observe(head); }
 }
 
 /* ---------- Верхня й нижня панелі ---------- */

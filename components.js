@@ -60,8 +60,12 @@ export function nbaBlock(na, { more = false } = {}) {
   const blocked = na.kind === 'step' && na.blocked;
   const primary = blocked ? 'Відкрити крок' : na.kind === 'gear' && na.fix ? 'Відкрити' : PRIMARY[na.kind] || 'Відкрити';
   const ic = na.kind === 'task' || na.kind === 'must' || (na.kind === 'step' && !blocked) ? 'check' : 'arrow';
+  // Час біля заголовка має бути однозначним: крок ранку — «до 06:30», справа — «о 14:00».
+  // Минулий час не показуємо біля «Зараз» — про нього вже сказано в причині («мало бути о 19:30»).
+  const future = na.at != null && na.at >= L.clockMin(L.localMin());
+  const atText = !future ? '' : na.kind === 'step' ? `до ${L.fmtHM(na.at)}` : na.kind === 'task' ? `о ${L.fmtHM(na.at)}` : '';
   return `<div class="nba" data-level="${na.level}" data-kind="${na.kind}">
-    <p class="nba-lead"><span>${na.picked ? 'Ви обрали' : 'Зараз найважливіше'}</span>${na.at != null ? `<span class="nba-at">${L.fmtHM(na.at)}</span>` : ''}</p>
+    <p class="nba-lead"><span>${na.picked ? 'Ви обрали' : 'Зараз найважливіше'}</span>${atText ? `<span class="nba-at">${atText}</span>` : ''}</p>
     <h2 class="nba-title" id="nbaTitle">${esc(na.title)}</h2>
     <p class="nba-why">${icon(na.level === 'warn' ? 'alert' : 'info')}<span>${esc(na.reason)}</span></p>
     <button type="button" class="btn btn-primary btn-xl btn-block nba-go" data-act="naDo" data-key="${esc(na.key)}">${icon(ic)}${primary}</button>
