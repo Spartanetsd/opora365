@@ -10,8 +10,8 @@ const clamp = (v, lo, hi, d) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
 };
 const tplOf = (app) => L.currentTpl(app.state);
-// Число й одиниця не розриваються між рядками: «5 хв», «1 год».
-const nb = (s) => esc(s).replace(/(\d) (хв|год)/g, '$1&nbsp;$2');
+// Число й одиниця не розриваються між рядками: «5 хв», «1 год»; прийменник лишається з часом: «о 07:06».
+const nb = (s) => esc(s).replace(/(\d) (хв|год)/g, '$1&nbsp;$2').replace(/(^|\s)(о|до|з) (\d{1,2}:\d{2})/g, '$1$2&nbsp;$3');
 // Назва кроку зі щитом «критичний»: щит не переноситься на окремий рядок, а лишається з останнім словом.
 const critTitle = (title, crit) => {
   const t = esc(title);
@@ -24,7 +24,7 @@ const msAt = (localM, nowMs) => Math.round(nowMs + (localM - L.localMin(nowMs)) 
 
 // Один рядок стану. Числа беруться з тих самих цілих хвилин, що й шкала: «06:35» і «на 5 хв» завжди сходяться.
 function levelInfo(st, end) {
-  if (st.level === 'ok') return { level: 'ok', ic: 'checkCircle', text: st.spare ? `У графіку, запас ${L.fmtDur(st.spare)}` : 'У графіку, без запасу' };
+  if (st.level === 'ok') return { level: 'ok', ic: 'checkCircle', text: st.spare ? `Раніше плану на ${L.fmtDur(st.spare)}, за планом о ${L.fmtHM(st.plan.departure)}` : 'У графіку, без запасу' };
   if (st.level === 'tight') return { level: 'tight', ic: 'clock', text: `Часу обмаль: бракує ${L.fmtDur(-st.spare)}` };
   return { level: 'late', ic: 'clock', text: `Орієнтовно о ${L.fmtHM(st.expected)}, на ${L.fmtDur(-st.spare)} пізніше` };
 }
@@ -35,17 +35,26 @@ function bigBlock(app, sm, st, nowMs) {
   const p = sm.plan;
   const end = L.endLabel(sm.tpl);
   let count = '', pill = '';
-  const depMs = msAt(sm.depAt, nowMs);
+  // Раніше за план — вихід і відлік зсуваються на час, коли ви будете готові.
+  const early = sm.phase === 'running' && st && st.spare > 0;
+  const depAt = early ? st.expected : sm.depAt;
+  let shown = early ? st.expected : p.departure;
+  const depMs = msAt(depAt, nowMs);
   const toWhat = end === 'Вихід' ? 'виходу' : 'початку дня';
   const countdown = () => `<p class="m-count">До ${toWhat} <b class="tnum" data-count-to="${depMs}">${L.fmtClock((depMs - nowMs) / 1000)}</b></p>`;
   if (sm.phase === 'running' && st) {
-    count = st.toDep > 0 ? countdown() : `<p class="m-count is-late">${end} за планом був о ${L.fmtHM(p.departure)}</p>`;
+    // Кроки виконано: вихід — зараз; підпис короткий, щоб не заходити на ілюстрацію.
+    if (st.finished) count = `<p class="m-count">${st.needEss ? 'Перевірте речі' : 'Кроки виконано'}</p>`;
+    else count = depAt > st.now ? countdown() : `<p class="m-count is-late">${end} за планом був о ${L.fmtHM(p.departure)}</p>`;
     const info = levelInfo(st, end);
     pill = `<p class="pill" data-level="${info.level}">${icon(info.ic)}<span>${nb(info.text)}</span></p>`;
   } else if (sm.phase === 'finished') {
-    const diff = sm.depAt - L.clockMin(L.localMin(sm.session.finishedAt));
-    count = sm.toDep > 0 ? countdown() : '';
-    pill = `<p class="pill" data-level="ok">${icon('checkCircle')}Готові${diff > 0 ? `, запас ${L.fmtDur(diff)}` : ''}</p>`;
+    // Готові — вихід тоді, коли завершили.
+    const doneAt = L.clockMin(L.localMin(sm.session.finishedAt));
+    const diff = sm.depAt - doneAt;
+    shown = doneAt;
+    count = `<p class="m-count">Можна виходити</p>`;
+    pill = `<p class="pill" data-level="ok">${icon('checkCircle')}<span>${nb(diff > 0 ? `Готові на ${L.fmtDur(diff)} раніше плану` : diff < 0 ? `Готові, на ${L.fmtDur(-diff)} пізніше плану` : 'Готові вчасно')}</span></p>`;
   } else if (sm.phase === 'window') {
     count = countdown();
   } else if (sm.phase === 'after') {
@@ -55,7 +64,7 @@ function bigBlock(app, sm, st, nowMs) {
   }
   return `<div class="m-big" data-level="${st && st.level !== 'ok' ? st.level : 'normal'}">
     <p class="m-big-l">${esc(end)}${sm.rel === 1 ? ', завтра' : ''}</p>
-    <p class="m-time tnum">${L.fmtHM(p.departure)}</p>
+    <p class="m-time tnum">${L.fmtHM(shown)}</p>
     ${count}
     ${pill}
   </div>`;
@@ -168,11 +177,16 @@ function timeline(app, sm, st) {
   }
   const doneN = rows.filter((r) => r.state === 'done' || r.state === 'skipped').length;
   const past = rows.length ? Math.round((doneN / (rows.length + 1)) * 100) : 0;
-  // Якщо не встигаєте — у шкалі орієнтовний час виходу, а план — у підписі. Шкала завжди йде за зростанням.
+  // У шкалі — фактичний час виходу: раніше за план, пізніше чи коли завершили; план і прибуття — у підписі.
+  // Шкала завжди йде за зростанням.
+  const live = L.liveDeparture(app.state);
   const late = running && st && !st.finished && st.spare < 0;
-  const endTime = late ? st.expected : sm.plan.departure;
-  const endMeta = late ? `за планом о ${L.fmtHM(sm.plan.departure)}, на ${L.fmtDur(-st.spare)} пізніше` : L.homeDay(sm.tpl) ? 'початок справ' : `прибуття о ${sm.tpl.arrival}`;
-  const endRow = `<div class="vt-row vt-end${late ? ' late' : ''}" data-state="${sm.phase === 'finished' ? 'done' : 'todo'}">
+  const shift = late ? -st.spare : live.shift;
+  const endTime = late ? st.expected : live.at;
+  const arrive = live.arrival == null ? null : live.arrival + (late ? -st.spare - live.shift : 0);
+  const planNote = shift ? `${shift > 0 ? `на ${L.fmtDur(shift)} пізніше` : `на ${L.fmtDur(-shift)} раніше`} плану` : '';
+  const endMeta = [late ? `за планом о ${L.fmtHM(sm.plan.departure)}, на ${L.fmtDur(-st.spare)} пізніше` : planNote, L.homeDay(sm.tpl) ? (shift ? '' : 'початок справ') : `прибуття о ${L.fmtHM(arrive ?? L.parseHM(sm.tpl.arrival))}`].filter(Boolean).join(', ');
+  const endRow = `<div class="vt-row vt-end${late ? ' late' : shift < 0 ? ' early' : ''}" data-state="${sm.phase === 'finished' ? 'done' : 'todo'}">
       <span class="vt-time">${L.fmtHM(endTime)}</span><span class="vt-node" aria-hidden="true"></span>
       <div class="vt-body"><div class="vt-item"><span class="vt-title">${esc(end)}</span><span class="vt-meta">${nb(endMeta)}</span></div></div></div>`;
   return `<div class="vt" style="--past:${past}%" role="list" aria-label="Кроки ранку">

@@ -16,7 +16,7 @@ import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.0.6';
+const VERSION = '3.0.7';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools, stats };
 const TABS = [

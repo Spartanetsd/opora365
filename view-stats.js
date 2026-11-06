@@ -14,7 +14,7 @@ function render(app) {
     const k = (n / scale).toFixed(3);
     const label = `${L.weekdayName(r.date)}, ${L.dayMonth(r.date)}: виконано ${n}, перевірок ${r.checks}, сценаріїв ${r.runs}${r.closed ? ', підсумок підбито' : ''}`;
     return `<li class="bar${r.date === today ? ' is-today' : ''}" aria-label="${esc(label)}">
-      <span class="bar-col" aria-hidden="true">${n ? `<span class="bar-n">${n}</span>` : ''}${r.checks || r.runs ? `<span class="bar-dot" title="Перевірки або сценарії"></span>` : ''}<span class="bar-fill${n ? '' : ' zero'}" style="--k:${k}"></span></span>
+      <span class="bar-col" aria-hidden="true">${n ? `<span class="bar-n">${n}</span>` : ''}${r.checks || r.runs ? `<span class="bar-dot" title="Перевірки або сценарії"></span>` : ''}<span class="bar-fill${n ? '' : ' is-empty'}" style="--k:${k}"></span></span>
       <span class="bar-d" aria-hidden="true">${L.WD_S[L.weekday(r.date)]}</span>
       <span class="bar-m" aria-hidden="true">${r.closed ? icon('moon') : ''}</span>
     </li>`;

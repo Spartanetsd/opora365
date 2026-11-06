@@ -245,6 +245,24 @@ export function sessionStatus(state, session, nowMs) {
   };
 }
 
+// Вихід «наживо». Під час підготовки — коли ви будете готові: зараз + решта кроків.
+// Раніше за план — вихід зсувається раніше (запізнення показується окремо, план лишається орієнтиром).
+// Після завершення — коли завершили. Прибуття зсувається на стільки ж.
+export function liveDeparture(state, nowMs = Date.now()) {
+  const sm = morningSummary(state, nowMs);
+  const planAt = sm.depAt;
+  let at = planAt, by = 'plan';
+  if (sm.phase === 'running') {
+    const st = sessionStatus(state, sm.session, nowMs);
+    if (st.spare > 0) { at = st.expected; by = 'early'; }
+  } else if (sm.phase === 'finished') {
+    at = clockMin(localMin(sm.session.finishedAt)); by = 'done';
+  }
+  const shift = at - planAt;
+  const arrival = homeDay(sm.tpl) ? null : planAt - sm.plan.departure + sm.plan.arrival + shift;
+  return { at, planAt, shift, arrival, by, sm };
+}
+
 // Короткий підсумок ранку для головного екрана.
 export function morningSummary(state, nowMs) {
   const now = clockMin(localMin(nowMs));
@@ -598,7 +616,7 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     const st = sessionStatus(state, sm.session, nowMs);
     const c = st.current;
     if (c) {
-      const reason = st.level === 'ok' ? `Крок ${st.index} із ${st.count}, ${end} о ${fmtHM(st.plan.departure)}`
+      const reason = st.level === 'ok' ? `Крок ${st.index} із ${st.count}, ${end} о ${fmtHM(st.spare > 0 ? st.expected : st.plan.departure)}${st.spare > 0 ? `, на ${fmtDur(st.spare)} раніше` : ''}`
         : st.level === 'tight' ? `Часу обмаль: бракує ${fmtDur(-st.spare)}` : `Запізнення на ${fmtDur(-st.spare)}, ${end} о ${fmtHM(st.plan.departure)}`;
       out.push({ key: `step:${c.id}`, kind: 'step', id: c.id, rank: 10, title: c.title, reason, at: c.end, level: st.level === 'ok' ? 'normal' : 'warn', critical: c.critical, blocked: c.items.length > 0, icon: 'sunrise', defer: false });
     } else if (st.needEss) {
@@ -742,9 +760,11 @@ export function dayEvents(state, nowMs = Date.now()) {
   const p = computePlan(tpl);
   const sm = morningSummary(state, nowMs);
   const morningDone = sm.session && sm.session.date === today && !!sm.session.finishedAt;
-  if (!p.wakePrevDay) events.push({ t: base + p.wake, kind: 'wake', title: 'Підйом', done: morningDone || now > base + p.wake });
-  if (p.departure >= 0) events.push({ t: base + p.departure, kind: 'dep', title: endLabel(tpl), done: now > base + p.departure });
-  if (!homeDay(tpl) && p.arrival < DAY) events.push({ t: base + p.arrival, kind: 'arr', title: 'Прибуття', done: now > base + p.arrival });
+  const live = sm.session && sm.session.date === today ? liveDeparture(state, nowMs) : null;
+  const shift = live ? live.shift : 0;
+  if (!p.wakePrevDay) events.push({ t: base + p.wake, kind: 'wake', title: 'Підйом', done: morningDone || !!live || now > base + p.wake });
+  if (p.departure >= 0) events.push({ t: base + p.departure + shift, kind: 'dep', title: endLabel(tpl), done: morningDone || now > base + p.departure + shift });
+  if (!homeDay(tpl) && p.arrival < DAY) events.push({ t: base + p.arrival + shift, kind: 'arr', title: 'Прибуття', done: now > base + p.arrival + shift });
   for (const t of state.tasks) {
     if (t.due !== today || !t.time || t.cancelledAt) continue;
     const m = parseHM(t.time);
@@ -783,7 +803,8 @@ export function pulseData(state, nowMs = Date.now()) {
     // «Не забути» після строку — окремо, тими ж словами, що й у самому блоці: «строк минув».
     overdue: tv.overdue.length,
     mustLate: mv.active.filter((m) => m.left !== null && m.left < 0).length,
-    next: ev.events.find((e) => e.t > now && !e.done) || null,
+    // Подія поточної хвилини ще попереду: «Вихід» о 05:55, коли кроки виконано і лишилося перевірити речі.
+    next: ev.events.find((e) => e.t >= now && !e.done) || null,
     checks: gs.issues + gs.needs,
     gearIssues: gs.issues,
     gearNeeds: gs.needs,

@@ -381,6 +381,34 @@ test('Автоматичний режим: пізній підйом — ран�
   ok(!L.nextAction(fresh(), nov(19, 0)).list.some((c) => c.kind === 'morning'), 'увечері ранок не нав’язується');
 });
 
+test('Вихід зсувається раніше, коли ви випереджаєте план; після завершення — час завершення', () => {
+  const s = fresh();
+  const ids = L.currentTpl(s).steps.map((x) => x.id);
+  s.session = session(6, 0, { done: { [ids[0]]: nov(6, 3), [ids[1]]: nov(6, 15) } });
+  const st = L.sessionStatus(s, s.session, nov(6, 16));
+  ok(st.spare > 0, 'почали раніше й ідете швидше');
+  const live = L.liveDeparture(s, nov(6, 16));
+  const planAt = live.planAt;
+  eq([live.by, live.at, live.shift], ['early', st.expected, -st.spare], 'вихід = коли будете готові');
+  eq(live.arrival, planAt - st.plan.departure + st.plan.arrival - st.spare, 'прибуття зсувається на стільки ж');
+  const dep = L.dayEvents(s, nov(6, 16)).events.find((e) => e.kind === 'dep');
+  eq(dep.t, st.expected, '«Пульс дня» показує той самий час виходу');
+  ok(L.nextAction(s, nov(6, 16)).main.reason.includes(`вихід о ${L.fmtHM(st.expected)}, на ${L.fmtDur(st.spare)} раніше`));
+  for (const id of ids) s.session.done[id] = s.session.done[id] || nov(6, 40);
+  eq(L.fmtHM(L.liveDeparture(s, nov(6, 40)).at), '06:40', 'кроки виконано — вихід зараз');
+  const nx = L.pulseData(s, nov(6, 40)).next;
+  eq([nx.kind, L.fmtHM(nx.t)], ['dep', '06:40'], 'лишилося перевірити речі — у «Пульсі дня» вихід зараз, а не прибуття');
+  for (const e of s.morning.essentials) s.session.ess[e.id] = true;
+  s.session.finishedAt = nov(6, 41);
+  const fin = L.liveDeparture(s, nov(6, 45));
+  eq([fin.by, L.fmtHM(fin.at), fin.shift < 0], ['done', '06:41', true], 'завершили — вихід тоді');
+  ok(L.dayEvents(s, nov(6, 45)).events.find((e) => e.kind === 'dep').done);
+  const late = fresh();
+  late.session = session(6, 55);
+  const lt = L.liveDeparture(late, nov(6, 56));
+  eq([lt.by, lt.at], ['plan', lt.planAt], 'запізнення — план лишається орієнтиром');
+});
+
 test('Наступна дія: ранкова підготовка має перевагу, крок — найвищу', () => {
   const s = fresh();
   s.tasks.push(T('Звіт', 1, '2026-11-03', nov(6, 0)));

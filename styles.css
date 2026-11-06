@@ -693,6 +693,7 @@ button.vt-item:active { background: var(--track); }
 .vt-row.vt-end .vt-node::before { width: 16px; height: 16px; border-radius: 5px; transform: rotate(45deg); border-color: var(--amber); background: rgba(var(--amber-rgb), .25); }
 .vt-row.vt-end .vt-title { font-weight: 750; }
 .vt-row.vt-end.late .vt-meta { color: var(--amber-ink); font-weight: 600; }
+.vt-row.vt-end.early .vt-meta { color: var(--teal-ink); font-weight: 600; }
 .vt-current { padding: 14px; border-radius: var(--r-lg); background: radial-gradient(100% 80% at 0% 0%, rgba(var(--amber-rgb), .14), transparent 60%), var(--surface); border: 1px solid rgba(var(--amber-rgb), .45); box-shadow: var(--sh-2), 0 0 30px -16px rgba(var(--amber-rgb), .7); animation: open var(--d3) var(--ease); }
 .vt-now { margin: 0; font-size: var(--t-meta); font-weight: 650; color: var(--amber-ink); }
 .vt-current .vt-title { display: block; margin-top: 4px; font-size: 1.22rem; font-weight: 700; letter-spacing: -.015em; }
@@ -936,7 +937,7 @@ button.vt-item:active { background: var(--track); }
 /* Без сірих «доріжок» на всю висоту: вони читалися як ціль на день. Порожній день — коротка риска. */
 .bar-col { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; width: 100%; max-width: 30px; height: 138px; }
 .bar-fill { display: block; flex: none; width: 100%; height: calc(var(--k, 0) * (100% - 24px)); min-height: 0; border-radius: 9px; background: linear-gradient(180deg, var(--teal), rgba(var(--teal-rgb), .55)); transform-origin: bottom; animation: grow var(--d3) var(--ease) both; }
-.bar-fill.zero { height: 4px; border-radius: 2px; background: var(--track); animation: none; }
+.bar-fill.is-empty { height: 4px; border-radius: 2px; background: var(--track); animation: none; }
 .bar-dot { flex: none; width: 6px; height: 6px; margin: 0 0 5px; border-radius: 50%; background: var(--cyan); }
 .bar-d { font-size: var(--t-cap); font-weight: 650; color: var(--text-2); }
 .bar.is-today .bar-d { color: var(--mode-ink); font-weight: 750; }
