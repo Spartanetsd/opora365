@@ -254,10 +254,10 @@ function openAdd(app, el) {
   const blank = { pr: 2, due: today, time: '', deadline: '', cat: '', note: '', sub: [], rep: null };
   openSheet(`
   <form class="sheet-form" data-submit="addFromSheet" data-type="${type}" data-rep="" data-nodate="false" autocomplete="off">
-    ${sheetHead('Нова справа', { cancel: 'Скасувати', done: 'Додати', submit: true })}
-    ${seg('Тип', [{ id: 'task', name: 'Справа' }, { id: 'must', name: 'Не забути' }], type, 'formSeg', 'type')}
+    ${sheetHead(type === 'must' ? 'Не забути' : 'Нова справа', { cancel: 'Скасувати', done: 'Додати', submit: true })}
+    <div class="list"><label class="row field"><input class="input-plain" name="title" placeholder="${type === 'must' ? 'Що не можна забути?' : 'Що потрібно зробити?'}" maxlength="300" enterkeyhint="done" aria-label="Назва справи" data-focus></label></div>
+    <div style="margin-top:12px">${seg('Тип', [{ id: 'task', name: 'Справа' }, { id: 'must', name: 'Не забути' }], type, 'formSeg', 'type')}</div>
     <input type="hidden" name="type" value="${type}">
-    <div class="list" style="margin-top:12px"><label class="row field"><input class="input-plain" name="title" placeholder="Що потрібно зробити?" maxlength="300" enterkeyhint="done" aria-label="Назва справи" data-focus></label></div>
     <div class="only-task">${taskFields(blank, today, true)}</div>
     <div class="only-must">
       <p class="hint" style="margin-top:12px">«Не забути» щодня на виду, доки ви не ухвалите рішення: виконати, перенести або скасувати.</p>
@@ -528,11 +528,11 @@ function focusHtml(app, id, doneTitle = '') {
   const nextBlock = sp.next
     ? `<div class="focus-next"><p class="focus-next-l">Наступний крок, ${sp.done + 1} з ${sp.total}</p><p class="focus-next-t">${esc(sp.next.t)}</p>
         <button type="button" class="btn btn-glass btn-block" data-act="focusSub" data-id="${esc(t.id)}" data-sub="${esc(sp.next.id)}">${icon('check')}Крок виконано</button></div>`
-    : `<div class="focus-next"><p class="focus-next-l">Наступний крок</p><p class="focus-next-t">${after ? `Потім: ${esc(after.title)}` : 'Після цього справ на сьогодні не залишиться'}</p></div>`;
+    : `<div class="focus-next"><p class="focus-next-l">Далі</p><p class="focus-next-t">${after ? esc(after.title) : 'Після цього справ на сьогодні не залишиться'}</p></div>`;
   return `<div class="scr focus-scr" data-id="${esc(t.id)}">${head}
     <div class="focus-body">
       ${sp.total ? `<div class="focus-ring">${miniRing({ key: `focus-${t.id}`, value: sp.done, total: sp.total, dim: 72, tone: 'teal' })}</div>` : ''}
-      <p class="focus-kind">${t.cat ? `${icon(L.TCAT[t.cat].icon)}${esc(L.TCAT[t.cat].name)}, ` : ''}${pr.name.toLowerCase()}</p>
+      <p class="focus-kind">${t.cat ? `${icon(L.TCAT[t.cat].icon)}${esc(L.TCAT[t.cat].name)}, ` : ''}${pr.short.toLowerCase()}</p>
       <h1 class="focus-title">${esc(t.title)}</h1>
       ${info ? `<p class="focus-reason">${esc(info.text)}</p>` : ''}
       ${nextBlock}
@@ -637,6 +637,13 @@ const actions = {
     if (form && field) {
       if (form.elements[field]) form.elements[field].value = el.dataset.v;
       form.dataset[field] = el.dataset.v;
+    }
+    // Нове: заголовок і підказка поля відповідають тому, що саме додаєте.
+    if (form?.dataset.submit === 'addFromSheet' && field === 'type') {
+      const must = el.dataset.v === 'must';
+      const t = form.closest('dialog')?.querySelector('.sheet-title');
+      if (t) t.textContent = must ? 'Не забути' : 'Нова справа';
+      if (form.elements.title) form.elements.title.placeholder = must ? 'Що не можна забути?' : 'Що потрібно зробити?';
     }
   },
   catPick(app, el) {

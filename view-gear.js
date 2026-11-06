@@ -93,7 +93,7 @@ function renderMap(app) {
     </div>
     <button type="button" class="soft-link" data-act="gOther">${icon('calendar')}Щотижнева або на вимогу</button>
     <section class="section" aria-labelledby="mapH">
-      <div class="sec-row"><h2 class="sec-h" id="mapH">Карта перевірок</h2><span class="legend" aria-hidden="true"><i data-k="ok"></i>перевірено<i data-k="unchecked"></i>ні<i data-k="missing"></i>проблема</span></div>
+      <div class="sec-row sec-row-stack"><h2 class="sec-h" id="mapH">Карта перевірок</h2><span class="legend" aria-hidden="true"><i data-k="ok"></i>перевірено<i data-k="unchecked"></i>не перевірено<i data-k="missing"></i>проблема</span></div>
       <div class="cmap">${gs.cats.map(catTile).join('')}
         ${gear.custom.length < G.CUSTOM_MAX ? `<button type="button" class="ctile ctile-add" data-act="gCatNew">${icon('plus')}<span class="ctile-name">Нова категорія</span><span class="ctile-sub">Власний перелік для перевірки</span></button>` : ''}
       </div>
@@ -217,7 +217,8 @@ function chrome(app) {
   return { right: `<button type="button" class="icon-btn" data-act="tab" data-tab="gear" data-sub="history" aria-label="Історія перевірок">${icon('history')}</button>` };
 }
 
-const backdrop = (app) => (app.route.sub ? null : { src: 'readiness-visual.webp', kind: 'header', pos: '50% 42%' });
+// Ілюстрація — уся, праворуч, під панеллю навігації: колесо не ховається під «островом» і кнопками.
+const backdrop = (app) => (app.route.sub ? null : { src: 'readiness-visual.webp', kind: 'stage', art: 'whole', ar: '1199 / 1312', ah: '86%', pos: '50% 50%', h: '292px' });
 
 /* ---------- Екран перевірки ---------- */
 

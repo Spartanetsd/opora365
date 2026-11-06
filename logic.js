@@ -744,7 +744,10 @@ export function pulseData(state, nowMs = Date.now()) {
     done, open, total,
     pct: total ? Math.round((done / total) * 100) : null,
     prioOpen: tv.ordered.filter((t) => t.pr <= 2).length,
-    overdue: tv.overdue.length + mv.active.filter((m) => m.left !== null && m.left < 0).length,
+    // «Прострочено» — лише справи, те саме число, що й «з них прострочено» в «Справах».
+    // «Не забути» після строку — окремо, тими ж словами, що й у самому блоці: «строк минув».
+    overdue: tv.overdue.length,
+    mustLate: mv.active.filter((m) => m.left !== null && m.left < 0).length,
     next: ev.events.find((e) => e.t > now && !e.done) || null,
     checks: gs.issues + gs.needs,
     gearIssues: gs.issues,

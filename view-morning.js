@@ -12,6 +12,13 @@ const clamp = (v, lo, hi, d) => {
 const tplOf = (app) => L.currentTpl(app.state);
 // Число й одиниця не розриваються між рядками: «5 хв», «1 год».
 const nb = (s) => esc(s).replace(/(\d) (хв|год)/g, '$1&nbsp;$2');
+// Назва кроку зі щитом «критичний»: щит не переноситься на окремий рядок, а лишається з останнім словом.
+const critTitle = (title, crit) => {
+  const t = esc(title);
+  if (!crit) return t;
+  const i = t.lastIndexOf(' ');
+  return `${t.slice(0, i + 1)}<span class="nowrap">${t.slice(i + 1)}${icon('shield', 'crit')}</span>`;
+};
 // Локальні хвилини → мітка часу (для живого відліку).
 const msAt = (localM, nowMs) => Math.round(nowMs + (localM - L.localMin(nowMs)) * 60000);
 
@@ -120,7 +127,7 @@ function currentCard(app, st) {
     : c.over > 0 ? `Довше запланованого на ${L.fmtDur(c.over)}` : 'Запланований час вийшов';
   return `<div class="vt-current">
     <p class="vt-now">Зараз, крок ${st.index} із ${st.count}</p>
-    <p class="vt-title">${esc(c.title)}${c.critical ? icon('shield', 'crit') : ''}</p>
+    <p class="vt-title">${critTitle(c.title, c.critical)}</p>
     <p class="vt-meta">${nb(timing)}${c.critical ? '. Критичний крок' : ''}</p>
     ${items}${extra}
     <div class="vt-actions">
@@ -145,7 +152,7 @@ function timeline(app, sm, st) {
       const time = r.state === 'done' ? at(r.doneAt) : r.state === 'skipped' ? at(r.skipAt) : r.state === 'todo' ? L.fmtHM(r.start) : '';
       const meta = r.state === 'done' ? 'зроблено' : r.state === 'skipped' ? 'пропущено' : r.state === 'auto' ? 'пропускається: часу обмаль' : `${r.dur} хв`;
       const body = cur ? currentCard(app, live) : `<button type="button" class="vt-item" data-act="stepToggle" data-id="${esc(r.id)}" role="checkbox" aria-checked="${r.state === 'done'}"${r.state === 'auto' ? ' disabled' : ''}>
-          <span class="vt-title">${esc(r.title)}${r.critical ? icon('shield', 'crit') : ''}</span><span class="vt-meta">${meta}</span></button>`;
+          <span class="vt-title">${critTitle(r.title, r.critical)}</span><span class="vt-meta">${meta}</span></button>`;
       return { state, time, body };
     });
   } else {
@@ -155,7 +162,7 @@ function timeline(app, sm, st) {
         state: 'plan',
         time: L.fmtHM(s.start),
         body: `<button type="button" class="vt-item" data-act="openStep" data-id="${esc(s.id)}" aria-label="${esc(s.title)}, о ${L.fmtHM(s.start)}, ${s.dur} хвилин. Змінити">
-          <span class="vt-title">${esc(s.title)}${s.critical ? icon('shield', 'crit') : ''}</span><span class="vt-meta">${s.dur} хв${extra}${s.items.length ? `, пунктів: ${s.items.length}` : ''}</span></button>`,
+          <span class="vt-title">${critTitle(s.title, s.critical)}</span><span class="vt-meta">${s.dur} хв${extra}${s.items.length ? `, пунктів: ${s.items.length}` : ''}</span></button>`,
       };
     });
   }
@@ -221,7 +228,7 @@ function render(app) {
     action = `<button type="button" class="btn btn-primary btn-xl btn-block" data-tone="amber" data-act="startSession">${icon('play')}Почати ранок</button>`;
   }
   return `<div class="page page-morning">
-    ${photoHead({ title: 'Мій ранок', sub: `${when}, ${L.dayMonth(sm.date)}. ${esc(sm.tpl.name)}${running ? '' : `, ${L.fmtDur(p.total)} на підготовку`}`, extra: bigBlock(app, sm, st, nowMs) })}
+    ${photoHead({ title: 'Мій ранок', sub: `${when}, ${esc(L.dayMonth(sm.date)).replace(/^(\d+) /, '$1&nbsp;')}. ${esc(sm.tpl.name)}${running ? '' : `, ${nb(L.fmtDur(p.total))} на підготовку`}`, extra: bigBlock(app, sm, st, nowMs) })}
     ${tplChips(app, sm)}
     ${facts(sm)}
     ${action}
@@ -243,11 +250,14 @@ function render(app) {
   </div>`;
 }
 
+// Маршрут відкривається з картки «Підйом… Прибуття…» — окрема кнопка в панелі була б дублем.
 function chrome() {
-  return { right: `<button type="button" class="icon-btn" data-act="openRoute" aria-label="Маршрут і час прибуття">${icon('sliders')}</button>` };
+  return {};
 }
 
-const backdrop = () => ({ src: 'morning-flow.webp', kind: 'header', pos: '50% 46%' });
+// Ілюстрація — уся, за висотою сцени під панеллю навігації, праворуч: стовпчик кроків (ліжко → авто)
+// видно повністю, текст — на спокійному лівому боці.
+const backdrop = () => ({ src: 'morning-flow.webp', kind: 'stage', art: 'whole', pos: '50% 50%', h: '318px' });
 
 /* ---------- Маршрут і шаблон ---------- */
 

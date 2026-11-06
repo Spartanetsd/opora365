@@ -10,7 +10,7 @@ export function openMenu(app) {
   const mi = L.modeInfo(app.state);
   const tpl = L.currentTpl(app.state);
   const tv = L.taskView(app.state.tasks, app.today);
-  const theme = { dark: 'Obsidian', light: 'Світла', auto: 'Як у системі' }[app.state.settings.theme];
+  const theme = { dark: 'темна', light: 'світла', auto: 'як у системі' }[app.state.settings.theme];
   const row = (act, ic, title, meta = '', extra = '') => `<button type="button" class="row row-btn" data-act="${act}"${extra}>
     <span class="row-ic">${icon(ic)}</span>
     <span class="row-main"><span class="row-title">${title}</span>${meta ? `<span class="row-meta">${esc(meta)}</span>` : ''}</span>
@@ -38,7 +38,7 @@ function settingsHtml(app) {
   const s = app.state.settings;
   return `${sheetHead('Налаштування')}
   <h3 class="sub-h">Оформлення</h3>
-  ${seg('Тема', [{ id: 'dark', name: 'Obsidian' }, { id: 'light', name: 'Світла' }, { id: 'auto', name: 'Як у системі' }], s.theme, 'setTheme')}
+  ${seg('Тема', [{ id: 'dark', name: 'Темна' }, { id: 'light', name: 'Світла' }, { id: 'auto', name: 'Як у системі' }], s.theme, 'setTheme')}
   <p class="hint">Колір рядка стану iPhone оновиться після перезапуску застосунку з іконки.</p>
 
   <h3 class="sub-h">Особисте</h3>
@@ -52,9 +52,12 @@ function settingsHtml(app) {
   <div class="note-card">
     <span class="note-ic" aria-hidden="true">${icon('info')}</span>
     <div class="note-body">
-      <p class="note-t">Чесно про обмеження iOS</p>
-      <p>Встановлений з Safari застосунок не може сам надіслати сповіщення, коли закритий: для цього потрібен сервер Web Push, якого тут свідомо немає. Наступна дія, прострочене й перевірки видно, щойно ви відкриваєте застосунок.</p>
-      <p>Щоб не проспати: «Команди», «Автоматизація», «+», «Час доби» (ваш час підйому), «Запускати одразу», дія «Показати сповіщення» з текстом «Відкрий ОПОРА».</p>
+      <p class="note-t">Нагадування видно, коли застосунок відкритий</p>
+      <p>Коли він закритий, сповіщень немає: для них потрібен сервер, якого тут свідомо немає.</p>
+      <details class="how">
+        <summary>Як не проспати: «Команди» на iPhone${icon('down')}</summary>
+        <p>«Команди» → «Автоматизація» → «+» → «Час доби» (ваш час підйому) → «Запускати одразу» → дія «Показати сповіщення» з текстом «Відкрий ОПОРА».</p>
+      </details>
     </div>
   </div>
 

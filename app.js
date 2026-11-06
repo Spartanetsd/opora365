@@ -16,7 +16,7 @@ import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.0.4';
+const VERSION = '3.0.5';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools, stats };
 const TABS = [
@@ -191,13 +191,20 @@ function bdImage(src) {
 
 function setBackdrop(spec) {
   const el = $('#backdrop');
-  const key = spec ? `${spec.src}|${spec.kind}|${spec.pos || ''}` : '';
-  document.documentElement.dataset.bd = spec ? spec.kind : '';
+  const key = spec ? `${spec.src}|${spec.kind}|${spec.pos || ''}|${spec.h || ''}|${spec.art || ''}|${spec.ah || ''}` : '';
+  const root = document.documentElement;
+  root.dataset.bd = spec ? spec.kind : '';
+  root.dataset.art = spec?.art || '';
+  // «Сцена»: висота й пропорції ілюстрації задає сторінка.
+  if (spec?.h) root.style.setProperty('--stage-h', spec.h); else root.style.removeProperty('--stage-h');
+  if (spec?.ar) root.style.setProperty('--art-ar', spec.ar); else root.style.removeProperty('--art-ar');
+  if (spec?.ah) root.style.setProperty('--art-h', spec.ah); else root.style.removeProperty('--art-h');
   if (el.dataset.key === key) return;
   el.dataset.key = key;
   if (!spec) { el.hidden = true; el.querySelectorAll('.bd-img').forEach((o) => o.remove()); return; }
   el.hidden = false;
   el.dataset.kind = spec.kind;
+  if (spec.art) el.dataset.art = spec.art; else delete el.dataset.art;
   if (!el.querySelector('.bd-shade')) el.insertAdjacentHTML('beforeend', '<div class="bd-shade"></div>');
   const e = bdImage(spec.src);
   const img = e.img;
@@ -233,9 +240,12 @@ function fitBackdrop() {
   const head = $('#view .ph, #view .today');
   fitRO?.disconnect();
   if (el.hidden || !head) { el.style.removeProperty('--fit'); return; }
+  // Низ заголовка — за розміткою, а не за екраном: під час появи сторінки вона ще зсунута
+  // анімацією, і виміряний «на льоту» край був би нижчим на ці пікселі.
   const set = () => {
-    const bottom = head.getBoundingClientRect().bottom + window.scrollY;
-    el.style.setProperty('--fit', `${Math.ceil(bottom + (el.dataset.kind === 'hero' ? 8 : 16))}px`);
+    let y = head.offsetHeight;
+    for (let e = head; e; e = e.offsetParent) y += e.offsetTop;
+    el.style.setProperty('--fit', `${Math.ceil(y + (el.dataset.kind === 'hero' ? 8 : 16))}px`);
   };
   set();
   if ('ResizeObserver' in window) { fitRO = new ResizeObserver(set); fitRO.observe(head); }
@@ -261,7 +271,8 @@ function renderChrome() {
   const today = app.today;
   const tv = L.taskView(app.state.tasks, today);
   const mv = L.mustView(app.state.musts, today);
-  const late = tv.overdue.length + mv.active.filter((m) => m.left !== null && m.left < 0).length;
+  const mustLate = mv.active.filter((m) => m.left !== null && m.left < 0).length;
+  const late = tv.overdue.length + mustLate;
   const issues = G.gearSummary(app.state.gear).issues;
   const badge = (tab, n, label) => {
     const b = $(`.tab[data-tab="${tab}"]`);
@@ -269,10 +280,11 @@ function renderChrome() {
     const name = TABS.find((t) => t.id === tab).name;
     el.hidden = !n;
     el.textContent = n > 99 ? '99+' : String(n);
-    b.setAttribute('aria-label', n ? `${name}, ${label} ${n}` : name);
+    b.setAttribute('aria-label', n ? `${name}, ${label}` : name);
   };
-  badge('home', late, 'прострочено');
-  badge('gear', issues, 'потребують уваги');
+  // Значок «Сьогодні» = «Прострочено» + «Не забути: строк минув» з «Пульсу дня».
+  badge('home', late, [tv.overdue.length ? `прострочено ${tv.overdue.length}` : '', mustLate ? `«Не забути» після строку: ${mustLate}` : ''].filter(Boolean).join(', '));
+  badge('gear', issues, `потребують уваги ${issues}`);
   const mod = app.view;
   const ch = mod.chrome ? mod.chrome(app) : {};
   const nested = !!app.route.sub || !!PARENT[app.route.tab];
@@ -362,18 +374,52 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { store.flush(); });
 
-// Висота екранної клавіатури — щоб панелі не ховалися під нею.
+// Екранна клавіатура. iOS не стискає сторінку, а показує лише її частину над клавіатурою
+// і може зсунути цю частину вниз (якщо поле в момент фокуса було під клавіатурою, напр. під час
+// появи панелі). Тому панелі й екрани прив'язані до видимої частини: --vvt — де вона починається,
+// --vvh — її висота, --kb — скільки сторінки під нею. Поле, в яке пишете, прокручується у видиму зону.
 function trackKeyboard() {
   const vv = window.visualViewport;
   if (!vv) return;
+  const root = document.documentElement;
   const set = () => {
-    const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-    document.documentElement.style.setProperty('--kb', `${kb}px`);
-    document.documentElement.classList.toggle('kb-open', kb > 80);
+    const pinched = vv.scale > 1.01; // збільшення пальцями — не клавіатура
+    const top = pinched ? 0 : Math.max(0, Math.round(vv.offsetTop));
+    const h = pinched ? window.innerHeight : Math.round(vv.height);
+    const kb = pinched ? 0 : Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    root.style.setProperty('--kb', `${kb}px`);
+    root.style.setProperty('--vvt', `${top}px`);
+    root.style.setProperty('--vvh', `${h}px`);
+    const open = window.innerHeight - h > 80;
+    root.classList.toggle('kb-open', open);
+    if (open) requestAnimationFrame(revealFocused);
   };
   vv.addEventListener('resize', set);
   vv.addEventListener('scroll', set);
+  document.addEventListener('focusin', () => {
+    if (!root.classList.contains('kb-open')) return;
+    setTimeout(revealFocused, 60);
+    setTimeout(revealFocused, 360);
+  });
   set();
+}
+
+// Поле у фокусі — у видимій частині своєї панелі чи екрана: не під заголовком, не під закріпленою кнопкою.
+function revealFocused() {
+  const a = document.activeElement;
+  if (!a || !a.matches('input:not([type=checkbox]):not([type=radio]), textarea, select')) return;
+  const box = a.closest('.sheet-body, .scr, #view');
+  if (!box || box.id === 'view') return;
+  const r = a.getBoundingClientRect();
+  const b = box.getBoundingClientRect();
+  const foot = box.querySelector('.scr-foot');
+  const footH = foot && !foot.contains(a) ? foot.getBoundingClientRect().height : 0;
+  // Екран: верхній відступ уже містить зону годинника й нерухомий заголовок.
+  const pad = box.classList.contains('scr') ? parseFloat(getComputedStyle(box).paddingTop) || 0 : 0;
+  const top = b.top + pad + 12;
+  const bottom = b.bottom - footH - 12;
+  if (r.top < top) box.scrollTop -= top - r.top;
+  else if (r.bottom > bottom) box.scrollTop += Math.min(r.bottom - bottom, r.top - top);
 }
 
 window.addEventListener('scroll', () => {

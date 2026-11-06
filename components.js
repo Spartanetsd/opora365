@@ -106,6 +106,7 @@ export function pulseCard(p) {
   const label = p.total ? `Виконано ${p.done} з ${p.total} справ, ${p.pct} відсотків` : 'Справ на сьогодні немає';
   const sig = [];
   if (p.overdue) sig.push({ tone: 'coral', ic: 'alertCircle', html: `Прострочено <b>${p.overdue}</b>` });
+  if (p.mustLate) sig.push({ tone: 'coral', ic: 'pin', html: `Не забути: строк минув <b>${p.mustLate}</b>` });
   if (p.next) sig.push({ tone: 'blue', ic: 'clock', html: `<b>${L.fmtHM(p.next.t)}</b> ${esc(p.next.title)}` });
   if (p.prioOpen) sig.push({ tone: 'amber', ic: 'flag', html: `Пріоритети в роботі <b>${p.prioOpen}</b>` });
   if (p.checks) sig.push({ tone: 'teal', ic: 'shieldCheck', html: `Перевірки <b>${p.checks}</b>`, act: 'data-act="tab" data-tab="gear"' });
@@ -229,7 +230,7 @@ export function quickTile({ kind, sc = null, run = null, count = 0, fav = false 
   let foot;
   if (k.id === 'task') foot = 'Швидка форма';
   else if (k.id === 'custom' && !sc) foot = count ? `${count} ${L.plural(count, ['сценарій', 'сценарії', 'сценаріїв'])}` : 'Створити';
-  else foot = `${steps} ${L.plural(steps, ['крок', 'кроки', 'кроків'])}${req ? `, обовʼязкових ${req}` : ''}`;
+  else foot = `${steps}&nbsp;${L.plural(steps, ['крок', 'кроки', 'кроків'])}${req ? `, ${req}&nbsp;${L.plural(req, ['обовʼязковий', 'обовʼязкові', 'обовʼязкових'])}` : ''}`;
   return `<button type="button" class="qtile" data-tone="${k.tone}" data-act="deckOpen" data-kind="${k.id}"${sc ? ` data-id="${esc(sc.id)}"` : ''} aria-label="${esc(sc && k.id !== 'custom' ? sc.title : k.name)}. ${esc(k.desc)}${run ? '. Триває' : ''}${fav ? '. В обраному' : ''}">
     <span class="qt-ic" aria-hidden="true">${icon(k.icon)}</span>
     <span class="qt-title">${esc(sc && k.id !== 'custom' ? sc.title : k.name)}</span>

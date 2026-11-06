@@ -55,7 +55,8 @@ function render(app) {
   </div>`;
 }
 
-const backdrop = () => ({ src: 'quick-action-visual.webp', kind: 'header', pos: '50% 34%' });
+// Ілюстрація — уся, праворуч, під панеллю навігації: плитки не ховаються під «островом» і кнопками.
+const backdrop = () => ({ src: 'quick-action-visual.webp', kind: 'stage', art: 'whole', ar: '1199 / 1312', ah: '86%', pos: '50% 50%', h: '292px' });
 
 /* ---------- Екран сценарію ---------- */
 
@@ -90,8 +91,8 @@ function runHtml(app) {
     <h3 class="sub-h">Нотатка</h3>
     <textarea class="textarea" id="dkNote" rows="3" maxlength="2000" data-change="dkNote" placeholder="Необовʼязково">${esc(run.note)}</textarea>
     <div class="scr-foot">
-      <button type="button" class="btn btn-primary btn-xl btn-block" data-act="dkFinish">${icon('check')}${pr.complete ? 'Завершити: усе підтверджено' : 'Завершити'}</button>
-      <p class="hint">${pr.complete ? 'Усі обовʼязкові кроки підтверджено.' : `Не підтверджено обовʼязкових: ${pr.reqTotal - pr.reqDone}. «Готово» буде лише після них.`}</p>
+      <button type="button" class="btn ${pr.complete ? 'btn-primary' : 'btn-tinted'} btn-xl btn-block" data-act="dkFinish">${icon('check')}${pr.complete ? 'Завершити: усе підтверджено' : 'Завершити'}</button>
+      <p class="hint">${pr.complete ? 'Усі обовʼязкові кроки підтверджено.' : `Не підтверджено обовʼязкових: ${pr.reqTotal - pr.reqDone}. Без них результат буде «Частково».`}</p>
     </div>
   </div>`;
 }
@@ -161,10 +162,11 @@ function assignHtml(app) {
   const today = app.today;
   const tom = L.addDays(today, 1);
   return `<div class="scr assign-scr" data-tone="moon">
-    <header class="scr-head"><button type="button" class="link" data-act="dkClose">Закрити</button><span class="scr-head-t">Несподіване доручення</span><span></span></header>
+    <header class="scr-head"><button type="button" class="link" data-act="dkClose">Закрити</button><span class="scr-head-t">Доручення</span><span></span></header>
     <form class="assign" data-submit="asSave" autocomplete="off">
-      <div class="scr-hero"><div class="scr-ic">${icon('clipboard')}</div><h1 class="scr-title">Що потрібно зробити?</h1><p class="scr-sub">Хвилина на запис — і доручення вже у справах.</p></div>
+      <div class="scr-hero"><div class="scr-ic">${icon('clipboard')}</div><h1 class="scr-title">Що потрібно зробити?</h1></div>
       <div class="list"><label class="row field"><textarea class="input-plain as-what" name="what" rows="2" maxlength="300" placeholder="Суть доручення" aria-label="Що зробити" data-focus></textarea></label></div>
+      <p class="hint">Особисту організацію записуйте без оперативних відомостей.</p>
       <h3 class="sub-h">До якого часу</h3>
       <div class="due">
         <button type="button" class="chip plain" data-act="setDue" data-v="${today}" aria-pressed="true">Сьогодні</button>
@@ -172,12 +174,12 @@ function assignHtml(app) {
         <input class="date-input" type="date" name="due" value="${today}" data-change="dueInput" aria-label="Дата">
         <input class="time-input" type="time" name="time" aria-label="Час">
       </div>
+      <p class="hint">Дата й час стануть дедлайном.</p>
       <h3 class="sub-h">Пріоритет</h3>
       ${seg('Пріоритет', L.PRIORITIES.map((p) => ({ id: p.id, name: p.short })), 1, 'formSeg', 'pr')}
       <input type="hidden" name="pr" value="1">
       <h3 class="sub-h">Що необхідно</h3>
       <textarea class="textarea" name="needs" rows="3" maxlength="1500" placeholder="Документи, люди, транспорт… Кожен пункт — з нового рядка, стане кроком справи"></textarea>
-      <p class="hint">Дата й час стануть дедлайном. Особисту організацію записуйте без оперативних відомостей.</p>
       <div class="scr-foot"><button type="submit" class="btn btn-primary btn-xl btn-block">${icon('plus')}Додати в справи</button></div>
     </form>
   </div>`;

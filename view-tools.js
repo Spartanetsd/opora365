@@ -5,10 +5,11 @@ import * as D from './logic-deck.js';
 import { $, esc, icon, openSheet, closeSheet, confirmSheet, toast, sheetHead, haptic } from './ui.js';
 import { emptyState, photoHead } from './components.js';
 
-function tile(t, editing) {
+// У «Улюблених» зірочка зайва — вона лише в загальних групах.
+function tile(t, editing, inFav = false) {
   const v = D.checkUrl(t.url);
   const inner = t.icon ? icon(t.icon) : esc(D.glyphOf(t));
-  const ic = `<span class="app-ic" data-tone="${t.tone}">${inner}${t.fav ? `<span class="app-fav" aria-hidden="true">${icon('star')}</span>` : ''}</span>`;
+  const ic = `<span class="app-ic" data-tone="${t.tone}">${inner}${t.fav && !inFav ? `<span class="app-fav" aria-hidden="true">${icon('star')}</span>` : ''}</span>`;
   const name = `<span class="app-name">${esc(t.title)}</span>`;
   if (editing || !v.ok) {
     const label = v.ok ? `Змінити: ${t.title}` : `${t.title}: недійсне посилання. Змінити`;
@@ -26,7 +27,7 @@ function grid(app) {
   }
   if (!v.count) return `${emptyState({ ic: 'search', title: 'Нічого не знайдено', text: 'Змініть запит або категорію.' })}`;
   const blocks = [];
-  if (v.fav.length && !ui.toolCat) blocks.push(`<div class="launch-group"><p class="sub-h" style="margin-top:4px">Улюблені</p><div class="launch">${v.fav.map((t) => tile(t, ui.toolEdit)).join('')}</div></div>`);
+  if (v.fav.length && !ui.toolCat) blocks.push(`<div class="launch-group"><p class="sub-h" style="margin-top:4px">Улюблені</p><div class="launch">${v.fav.map((t) => tile(t, ui.toolEdit, true)).join('')}</div></div>`);
   for (const g of v.groups) blocks.push(`<div class="launch-group"><p class="sub-h">${esc(g.name)}</p><div class="launch">${g.items.map((t) => tile(t, ui.toolEdit)).join('')}</div></div>`);
   blocks.push(`<div class="launch-group"><div class="launch">${add}</div></div>`);
   return blocks.join('');
@@ -36,10 +37,12 @@ function render(app) {
   const ui = app.ui;
   const used = new Set(app.state.tools.map((t) => t.cat));
   const cats = D.TOOL_CATS.filter((c) => used.has(c.id));
+  // Пошук і фільтри — коли інструментів багато; для кількох іконок вони лише заважають.
+  const many = app.state.tools.length > 8;
   return `<div class="page">
     ${photoHead({ title: 'Інструменти', sub: 'Ваші сервіси й застосунки — одним дотиком' })}
-    <label class="search">${icon('search')}<input id="toolSearch" type="search" placeholder="Пошук" value="${esc(ui.toolQ)}" data-input="toolSearch" enterkeyhint="search" aria-label="Пошук інструментів" autocomplete="off"></label>
-    ${cats.length > 1 ? `<div class="chips" role="radiogroup" aria-label="Категорії" style="margin-top:12px">
+    ${many || ui.toolQ ? `<label class="search">${icon('search')}<input id="toolSearch" type="search" placeholder="Пошук" value="${esc(ui.toolQ)}" data-input="toolSearch" enterkeyhint="search" aria-label="Пошук інструментів" autocomplete="off"></label>` : ''}
+    ${(many || ui.toolCat) && cats.length > 1 ? `<div class="chips" role="radiogroup" aria-label="Категорії" style="margin-top:12px">
       <button type="button" class="chip plain" role="radio" aria-checked="${!ui.toolCat}" aria-pressed="${!ui.toolCat}" data-act="toolCat" data-v="">Усі</button>
       ${cats.map((c) => `<button type="button" class="chip plain" role="radio" aria-checked="${ui.toolCat === c.id}" aria-pressed="${ui.toolCat === c.id}" data-act="toolCat" data-v="${c.id}">${esc(c.name)}</button>`).join('')}
     </div>` : ''}

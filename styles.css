@@ -24,7 +24,7 @@
   --surface-3: #27384F;
   --panel: rgba(25, 38, 56, .74);
   --glass: rgba(12, 22, 35, .62);
-  --glass-strong: rgba(16, 29, 44, .9);
+  --glass-strong: rgba(16, 29, 44, .95);
   --line: rgba(160, 174, 192, .13);
   --line-2: rgba(160, 174, 192, .24);
   --hl: rgba(255, 255, 255, .055);
@@ -97,7 +97,7 @@
   --surface-3: #EDF2F7;
   --panel: rgba(255, 255, 255, .82);
   --glass: rgba(255, 255, 255, .64);
-  --glass-strong: rgba(255, 255, 255, .92);
+  --glass-strong: rgba(255, 255, 255, .95);
   --line: rgba(16, 29, 44, .09);
   --line-2: rgba(16, 29, 44, .17);
   --hl: rgba(255, 255, 255, .95);
@@ -163,6 +163,7 @@ img { max-width: 100%; }
 .vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .haptic { display: none; }
 .tnum { font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }
 
 /* Тихе світло режиму дня для сторінок без зображення */
 .ambient {
@@ -170,7 +171,7 @@ img { max-width: 100%; }
   background: radial-gradient(110% 46% at 50% -8%, rgba(var(--mode-rgb), .16), transparent 70%);
   transition: opacity var(--d3) var(--ease);
 }
-:root[data-bd="hero"] body > .ambient, :root[data-bd="header"] body > .ambient, :root[data-bd="band"] body > .ambient { opacity: 0; }
+:root[data-bd="hero"] body > .ambient, :root[data-bd="header"] body > .ambient, :root[data-bd="band"] body > .ambient, :root[data-bd="stage"] body > .ambient { opacity: 0; }
 
 /* ---------- Фонове зображення сторінки ---------- */
 
@@ -184,6 +185,21 @@ img { max-width: 100%; }
 }
 .backdrop[data-kind="hero"] { height: max(var(--hero-h), var(--fit)); }
 .backdrop[data-kind="band"] { height: max(var(--band-h), var(--fit)); }
+/* «Сцена» — ілюстрація з важливою композицією (стовпчик кроків ранку): починається під панеллю
+   навігації, а не під годинником, і показується повністю. Висоту задає --stage-h сторінки. */
+:root { --stage-top: calc(var(--safe-t) + var(--bar-h)); --stage-h: 60vw; }
+.backdrop[data-kind="stage"] { top: var(--stage-top); height: calc(max(var(--stage-h) + var(--stage-top) + 16px, var(--fit)) - var(--stage-top)); background: var(--bg); }
+.backdrop[data-kind="stage"] .bd-img { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 26px); mask-image: linear-gradient(180deg, transparent 0, #000 26px); }
+/* Уся ілюстрація: за висотою сцени, притиснута праворуч; лівий край тане в тло, і там — текст.
+   Нічого не обрізається, нічого не ховається під годинником чи кнопками. */
+.backdrop[data-art="whole"] .bd-img { left: auto; right: 0; width: auto; max-width: none; height: var(--art-h, 100%); aspect-ratio: var(--art-ar, .75); object-fit: cover; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 38%), linear-gradient(180deg, transparent 0, #000 40px, #000 calc(100% - 48px), transparent 100%); -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent 0, #000 38%), linear-gradient(180deg, transparent 0, #000 40px, #000 calc(100% - 48px), transparent 100%); mask-composite: intersect; }
+:root[data-scheme="light"] .backdrop[data-art="whole"] { background: #0B1526; }
+/* На широкому екрані сцена — у межах сторінки, а не через увесь монітор */
+.backdrop[data-art="whole"] { left: max(0px, calc(50% - 340px)); right: max(0px, calc(50% - 340px)); }
+:root[data-scheme="light"] .backdrop[data-kind="stage"][data-art="whole"] { left: max(12px, calc(50% - 328px)); right: max(12px, calc(50% - 328px)); }
+:root[data-scheme="light"] .backdrop[data-kind="stage"][data-art="whole"] .bd-img { -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 38%), linear-gradient(180deg, #000 calc(100% - 48px), transparent 100%); -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent 0, #000 38%), linear-gradient(180deg, #000 calc(100% - 48px), transparent 100%); mask-composite: intersect; }
+:root[data-art="whole"] .ph-sub { max-width: min(68%, 270px); text-wrap: balance; }
+:root[data-art="whole"] .page-morning .ph-sub { max-width: min(58%, 210px); }
 .bd-img {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
@@ -201,20 +217,28 @@ img { max-width: 100%; }
     linear-gradient(180deg, rgba(8, 13, 22, .62) 0%, rgba(8, 13, 22, .1) 32%, rgba(8, 13, 22, .35) 62%, var(--bg) 100%),
     linear-gradient(90deg, rgba(8, 13, 22, .5) 0%, rgba(8, 13, 22, .12) 62%, rgba(8, 13, 22, 0) 100%);
 }
+.backdrop[data-kind="stage"] .bd-shade {
+  background:
+    linear-gradient(180deg, rgba(8, 13, 22, 0) 58%, rgba(8, 13, 22, .5) 80%, var(--bg) 100%),
+    linear-gradient(90deg, rgba(8, 13, 22, .55) 0%, rgba(8, 13, 22, .16) 56%, rgba(8, 13, 22, 0) 76%);
+}
 :root[data-scheme="light"] .backdrop[data-kind="hero"] { background: #DCE8F3; }
 :root[data-scheme="light"] .backdrop[data-kind="hero"] .bd-shade {
   background: linear-gradient(180deg, rgba(238, 243, 248, .78) 0%, rgba(238, 243, 248, .2) 28%, rgba(238, 243, 248, 0) 42%, rgba(238, 243, 248, .4) 60%, rgba(238, 243, 248, .9) 80%, var(--bg) 100%);
 }
 /* У світлій темі темні ілюстрації показуються «вікном» із заокругленням, а не розтікаються по світлому тлу */
-:root[data-scheme="light"] .backdrop[data-kind="header"], :root[data-scheme="light"] .backdrop[data-kind="band"] {
+:root[data-scheme="light"] .backdrop[data-kind="header"], :root[data-scheme="light"] .backdrop[data-kind="band"], :root[data-scheme="light"] .backdrop[data-kind="stage"] {
   left: max(12px, var(--safe-l)); right: max(12px, var(--safe-r));
   top: calc(var(--safe-t) + var(--bar-h) + 2px);
-  height: calc(max(var(--hdr-h), var(--fit)) - var(--safe-t) - var(--bar-h) - 2px);
+  /* Вікно закінчується там, де закінчується заголовок: до наступного блоку — чіткий відступ */
+  height: calc(max(var(--hdr-h), var(--fit)) - var(--safe-t) - var(--bar-h) - 18px);
   border-radius: var(--r-xl);
   box-shadow: var(--sh-2);
 }
-:root[data-scheme="light"] .backdrop[data-kind="band"] { height: calc(max(var(--band-h) + 32px, var(--fit)) - var(--safe-t) - var(--bar-h) - 2px); }
-:root[data-scheme="light"] .backdrop[data-kind="header"] .bd-shade, :root[data-scheme="light"] .backdrop[data-kind="band"] .bd-shade {
+:root[data-scheme="light"] .backdrop[data-kind="band"] { height: calc(max(var(--band-h) + 16px, var(--fit) - 16px) - var(--safe-t) - var(--bar-h) - 2px); }
+:root[data-scheme="light"] .backdrop[data-kind="stage"] { height: calc(max(var(--stage-h) + var(--stage-top), var(--fit) - 16px) - var(--stage-top) - 2px); }
+:root[data-scheme="light"] .backdrop[data-kind="stage"] .bd-img { -webkit-mask-image: none; mask-image: none; }
+:root[data-scheme="light"] .backdrop[data-kind="header"] .bd-shade, :root[data-scheme="light"] .backdrop[data-kind="band"] .bd-shade, :root[data-scheme="light"] .backdrop[data-kind="stage"] .bd-shade {
   background: linear-gradient(180deg, rgba(8, 13, 22, 0) 30%, rgba(8, 13, 22, .7) 100%);
 }
 
@@ -254,7 +278,7 @@ img { max-width: 100%; }
 :root[data-bd="header"] .topbar:not(.compact) .back-btn,
 :root[data-bd="band"] .topbar:not(.compact) .back-btn { color: var(--on-image); }
 :root[data-scheme="light"][data-bd] .topbar:not(.compact) .icon-btn { color: var(--text); background: rgba(255, 255, 255, .55); }
-:root[data-scheme="light"][data-bd] .topbar:not(.compact) .back-btn { color: var(--cyan-ink); }
+:root[data-scheme="light"][data-bd] .topbar:not(.compact) .back-btn { color: var(--mode-ink); }
 
 /* Нижня навігація — плаваюча капсула з трьох розділів */
 .tabbar {
@@ -303,6 +327,9 @@ html.kb-open .tabbar, html.focus-mode .tabbar { transform: translateY(140%); opa
 .legend { display: inline-flex; align-items: center; gap: 4px 8px; font-size: var(--t-cap); color: var(--text-2); }
 .legend i, .sbar i { display: inline-block; }
 .legend i { width: 8px; height: 8px; border-radius: 2px; margin-left: 6px; }
+/* Заголовок і легенда — у два рядки: назва розділу не ламається */
+.sec-row-stack { flex-direction: column; align-items: flex-start; gap: 4px; }
+.sec-row-stack .legend i:first-child { margin-left: 0; }
 
 .list { border-radius: var(--r-lg); background: var(--surface); border: .5px solid var(--line); box-shadow: var(--sh-1); overflow: hidden; }
 .list + .list { margin-top: 12px; }
@@ -405,6 +432,7 @@ button.row:active, .row-main:active { background: var(--track); }
 .sheet .seg { margin-bottom: 4px; }
 
 .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; margin: 0 -2px; }
+.page .chips:not(.wrap):not(.center-chips) { margin-inline: calc(-1 * max(var(--gutter), var(--safe-l))); padding-inline: max(var(--gutter), var(--safe-l)); scroll-padding-inline: max(var(--gutter), var(--safe-l)); }
 .chips::-webkit-scrollbar { display: none; }
 .chips.wrap { flex-wrap: wrap; overflow: visible; }
 .chips.center-chips { justify-content: center; }
@@ -475,15 +503,16 @@ button.row:active, .row-main:active { background: var(--track); }
 
 /* ---------- Заголовок на зображенні ---------- */
 
-.ph { display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; padding: 0 2px 6px; color: var(--on-image); }
+.ph { display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; margin-bottom: 12px; padding: 0 2px 6px; color: var(--on-image); }
 :root[data-bd="header"] .ph { min-height: calc(var(--hdr-h) - var(--safe-t) - var(--bar-h) - 14px); }
 :root[data-bd="band"] .ph { min-height: calc(var(--band-h) - var(--safe-t) - var(--bar-h) - 10px); }
+:root[data-bd="stage"] .ph { min-height: var(--stage-h); padding-top: 12px; }
 :root[data-bd=""] .ph { color: var(--text); }
 .ph-title { margin: 0; font-family: var(--font-display); font-size: var(--t-h1); font-weight: 700; line-height: 1.08; letter-spacing: -.028em; text-shadow: 0 2px 18px rgba(0, 0, 0, .35); }
 .ph-sub { margin: 6px 0 0; font-size: var(--t-small); line-height: 1.4; color: rgba(244, 247, 251, .82); text-shadow: 0 1px 10px rgba(0, 0, 0, .4); }
-:root[data-scheme="light"][data-bd="header"] .ph, :root[data-scheme="light"][data-bd="band"] .ph { padding: 16px 16px 14px; }
+:root[data-scheme="light"][data-bd="header"] .ph, :root[data-scheme="light"][data-bd="band"] .ph, :root[data-scheme="light"][data-bd="stage"] .ph { padding: 16px 16px 14px; }
 /* На зображенні ранку праворуч — декоративні піктограми кроків: текст тримаємо лівіше. */
-.page-morning .ph-sub, .page-morning .m-count, .page-morning .pill { max-width: min(68%, 252px); text-wrap: balance; }
+.page-morning .ph-sub, .page-morning .pill { max-width: min(68%, 252px); text-wrap: balance; }
 :root[data-scheme="light"][data-bd="band"] .ph { min-height: calc(var(--band-h) - var(--safe-t) - var(--bar-h) + 18px); }
 .page-plain { padding-top: 6px; }
 
@@ -599,6 +628,13 @@ button.row:active, .row-main:active { background: var(--track); }
 .note-body p { margin: 0; }
 .note-body p + p { margin-top: 6px; }
 .note-t { color: var(--text); font-weight: 650; font-size: var(--t-small); }
+/* Подробиці — лише на вимогу */
+.how { margin-top: 2px; }
+.how summary { display: flex; align-items: center; gap: 6px; min-height: 40px; list-style: none; cursor: pointer; color: var(--cyan-ink); font-weight: 600; }
+.how summary::-webkit-details-marker { display: none; }
+.how summary .i { width: 16px; height: 16px; transition: transform var(--d2) var(--ease); }
+.how[open] summary .i { transform: rotate(180deg); }
+.how p { margin: 0 0 4px; }
 
 /* ---------- «Мій ранок» ---------- */
 
@@ -893,13 +929,14 @@ button.vt-item:active { background: var(--track); }
 .stats-card { padding: 16px 14px 12px; border-radius: var(--r-lg); background: var(--surface); border: .5px solid var(--line); box-shadow: var(--sh-1); margin-top: 18px; }
 .bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
 .bar { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.bar-n { min-height: 18px; font-size: var(--t-cap); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-2); }
-.bar-col { position: relative; display: flex; align-items: flex-end; width: 100%; max-width: 30px; height: 120px; border-radius: 9px; background: var(--track); overflow: hidden; }
-.bar-fill { display: block; width: 100%; height: var(--h); min-height: 0; border-radius: 9px; background: linear-gradient(180deg, var(--teal), rgba(var(--teal-rgb), .55)); transform-origin: bottom; animation: grow var(--d3) var(--ease) both; }
-.bar-dot { position: absolute; top: 6px; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--cyan); }
+.bar-n { flex: none; margin: 0 0 4px; font-size: var(--t-cap); font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text-2); }
+/* Без сірих «доріжок» на всю висоту: вони читалися як ціль на день. Порожній день — коротка риска. */
+.bar-col { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; width: 100%; max-width: 30px; height: 138px; }
+.bar-fill { display: block; flex: none; width: 100%; height: calc(var(--k, 0) * (100% - 24px)); min-height: 0; border-radius: 9px; background: linear-gradient(180deg, var(--teal), rgba(var(--teal-rgb), .55)); transform-origin: bottom; animation: grow var(--d3) var(--ease) both; }
+.bar-fill.zero { height: 4px; border-radius: 2px; background: var(--track); animation: none; }
+.bar-dot { flex: none; width: 6px; height: 6px; margin: 0 0 5px; border-radius: 50%; background: var(--cyan); }
 .bar-d { font-size: var(--t-cap); font-weight: 650; color: var(--text-2); }
-.bar.is-today .bar-d { color: var(--mode-ink); }
-.bar.is-today .bar-col { box-shadow: 0 0 0 1.5px rgba(var(--mode-rgb), .6); }
+.bar.is-today .bar-d { color: var(--mode-ink); font-weight: 750; }
 .bar-m { min-height: 16px; color: var(--moon-ink); }
 .bar-m .i { width: 14px; height: 14px; }
 .legend-line { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 2px 0; font-size: var(--t-cap); color: var(--text-2); }
@@ -923,7 +960,8 @@ dialog { color: var(--text); }
   inset: auto 0 var(--kb) 0;
   width: min(100%, 620px);
   max-width: 100%;
-  max-height: calc(100dvh - var(--kb) - var(--safe-t) - 10px);
+  /* Не вища за видиму частину екрана над клавіатурою: заголовок і поле завжди на виду */
+  max-height: calc(var(--vvh, 100dvh) - var(--safe-t) - 10px);
   margin: 0 auto;
   padding: 0;
   border: 0;
@@ -934,6 +972,7 @@ dialog { color: var(--text); }
 }
 :root[data-scheme="light"] .sheet { --surface: #FFFFFF; background: var(--bg); }
 .sheet[open] { display: flex; flex-direction: column; animation: sheet-in var(--d3) var(--ease); }
+.sheet.soft-in[open] { animation: sheet-soft-in var(--d2) var(--ease); }
 .sheet.dragging { transition: none; }
 .sheet:not(.dragging) { transition: transform var(--d2) var(--ease); }
 .sheet.closing { animation: sheet-out var(--d1) var(--ease-in) forwards; }
@@ -971,7 +1010,8 @@ form[data-type="must"] .only-task, form[data-type="task"] .only-must, form[data-
 
 /* ---------- Повноекранні екрани ---------- */
 
-.screen { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--bg); }
+/* Екран займає саме видиму частину: з клавіатурою — від верху видимої зони до клавіатури */
+.screen { position: fixed; inset: var(--vvt, 0px) 0 auto 0; width: 100%; height: var(--vvh, 100%); max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--bg); }
 .screen::backdrop { background: var(--bg); }
 .screen.rise[open] { animation: screen-in var(--d3) var(--ease); }
 .screen .ambient { position: absolute; }
@@ -992,12 +1032,15 @@ form[data-type="must"] .only-task, form[data-type="task"] .only-must, form[data-
 .screen.has-head .scr { padding-top: calc(var(--safe-t) + 4px + 56px); }
 .scr-head > :last-child { justify-self: end; }
 .scr-head > :first-child { justify-self: start; }
-.scr-head-t { font-weight: 650; font-size: var(--t-small); color: var(--text-2); text-align: center; }
+.scr-head-t { font-weight: 600; font-size: var(--t-body); color: var(--text); text-align: center; letter-spacing: -.01em; }
 /* Закріплений низ екрана: коротке згасання зверху, далі суцільне тло — поля форми не просвічують крізь кнопку. */
 .scr-foot { --foot-bg: var(--bg); position: sticky; bottom: calc(-28px - var(--safe-b)); margin-top: 18px; padding: 16px 0 calc(28px + var(--safe-b)); background: linear-gradient(180deg, transparent 0, var(--foot-bg) 14px); }
 .has-bg .scr-foot { --foot-bg: rgb(10, 16, 26); }
 :root[data-scheme="light"] .has-bg .scr-foot { --foot-bg: rgb(236, 241, 247); }
 .scr-foot .hint { text-align: center; }
+/* Коли відкрита клавіатура, смужка жестів схована під нею — кнопка стоїть одразу над клавіатурою */
+html.kb-open .scr { padding-bottom: 12px; }
+html.kb-open .scr-foot { bottom: -12px; padding-bottom: 12px; }
 
 /* Вітальний екран — як сцена презентації: зображення окремо, ніщо його не перекриває;
    під ним на спокійному тлі назва, одна думка, пʼять запитань і одна головна дія. Завжди темний. */
@@ -1129,6 +1172,7 @@ html.modal-open .toast { bottom: calc(var(--safe-b) + 18px + var(--kb)); }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes open { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes sheet-soft-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
 @keyframes sheet-out { from { transform: none; } to { transform: translateY(100%); } }
 @keyframes screen-in { from { opacity: 0; transform: scale(1.02); } to { opacity: 1; transform: none; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }

@@ -121,10 +121,13 @@ export function openSheet(html, { onClose = null, label = 'Панель' } = {})
   d.classList.remove('scrolled');
   d.dataset.dirty = '';
   d.onCloseOnce = onClose;
+  const f = d.querySelector('[data-focus]');
+  // Панель із полем для введення зʼявляється на своєму місці (коротке піднімання), а не з-під краю:
+  // у мить фокуса поле вже над клавіатурою, і iOS не зсуває сторінку.
+  if (!d.open) d.classList.toggle('soft-in', !!f && f.matches('input:not([type=checkbox]):not([type=radio]), textarea'));
   if (!d.open) showModalTop(d);
   syncModalClass();
   if (kept) d.append($('#toast')); else adoptToast(d);
-  const f = d.querySelector('[data-focus]');
   if (f) f.focus();
   else d.querySelector('.sheet-body').focus({ preventScroll: true });
   return d;
