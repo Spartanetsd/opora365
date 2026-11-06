@@ -514,11 +514,99 @@ test('Вечірній підсумок: день до 04:00 — поперед�
   eq(s.days['2026-11-03'].moved, 1);
 });
 
-test('Підсумки тижня: реальні виконання за 7 днів', () => {
+test('Журнал ранків: завершену підготовку записано, скасоване завершення — прибрано', () => {
   const s = fresh();
-  s.tasks.push({ ...T('a', 2, '2026-11-02', 1), doneAt: nov(10, 0, 2) }, { ...T('b', 2, '2026-11-03', 1), doneAt: nov(9, 0) }, { ...T('c', 2, '2026-11-03', 1), cancelledAt: nov(9, 0) }, { ...T('старе', 2, '2026-10-01', 1), doneAt: nov(9, 0, 1) - 40 * 864e5 });
-  const w = L.weekStats(s, nov(12, 0));
-  eq([w.rows.length, w.rows[6].date, w.tasks, w.rows[5].tasks, w.rows[6].tasks, w.max], [7, '2026-11-03', 2, 1, 1, 1]);
+  s.session = session(6, 40, { finishedAt: nov(7, 20) }); // вихід за планом о 07:35
+  eq([L.logMorning(s), s.mornings['2026-11-03'].spare], [true, 15], 'готові на 15 хв раніше');
+  eq(L.logMorning(s), false, 'без змін — без запису');
+  s.session.finishedAt = 0;
+  eq([L.logMorning(s), '2026-11-03' in s.mornings], [true, false]);
+  s.session.finishedAt = nov(7, 50);
+  L.logMorning(s);
+  eq(s.mornings['2026-11-03'].spare, -15, 'запізнення — відʼємне');
+  const back = L.cleanState(JSON.parse(JSON.stringify({ ...s, mornings: { ...s.mornings, 'не дата': { at: 1, spare: 1 }, '2026-11-01': { at: 0, spare: 3 } } })), nov(12, 0)).state;
+  eq(Object.keys(back.mornings), ['2026-11-03'], 'після перевірки даних лишаються лише коректні записи');
+});
+
+test('Статистика: справи в строк — за планом, без перенесень; сімʼя і здоровʼя', () => {
+  const s = fresh();
+  const oct = (d) => Date.UTC(2026, 9, d, 9, 0);
+  s.tasks.push(
+    { ...T('вчасно', 2, '2026-11-02', 1, { cat: 'family' }), doneAt: nov(10, 0, 2) },
+    { ...T('із запізненням', 2, '2026-11-01'), doneAt: nov(9, 0) },
+    { ...T('перенесена', 2, '2026-11-02', 1, { moved: 1 }), doneAt: nov(9, 0, 2) },
+    T('прострочена', 1, '2026-11-02'),
+    T('сьогоднішня', 1, '2026-11-03'),
+    { ...T('минулий тиждень', 2, '2026-10-22'), doneAt: oct(22) },
+    { ...T('скасована', 2, '2026-11-02'), cancelledAt: nov(9, 0, 2) },
+    { ...T('без дати', 3, '', 1, { cat: 'health' }), doneAt: nov(8, 0, 1) },
+    { ...T('після дедлайну', 3, '', 1, { deadline: '2026-10-30' }), doneAt: nov(8, 0, 1) },
+    { ...T('раніше строку', 2, '2026-11-04'), doneAt: nov(9, 0) },
+  );
+  const st = L.lifeStats(s, nov(12, 0));
+  eq([st.cur.from, st.cur.to, st.prev.from, st.prev.to], ['2026-10-28', '2026-11-03', '2026-10-21', '2026-10-27']);
+  eq(st.cur.rows.tasks, { n: 3, of: 7 }, 'вчасно, без дати, раніше строку — з 7');
+  eq(st.prev.rows.tasks, { n: 1, of: 1 });
+  eq([st.cur.rows.life.n, st.cur.done], [2, 6]);
+});
+
+test('Статистика: вечори — від першого дня користування, сьогоднішній лише підбитий', () => {
+  const s = fresh();
+  s.tasks.push(T('перша', 2, '2026-11-01', nov(8, 0, 1)));
+  s.days['2026-11-01'] = { at: nov(21, 0, 1), done: 1, moved: 0 };
+  s.days['2026-11-02'] = { at: nov(21, 0, 2), done: 1, moved: 0 };
+  let st = L.lifeStats(s, nov(12, 0));
+  eq([st.since, st.cur.rows.evening, st.prev.active, st.prev.rows.evening.of], ['2026-11-01', { n: 2, of: 2 }, false, 0]);
+  s.days['2026-11-03'] = { at: nov(21, 0), done: 1, moved: 0 };
+  st = L.lifeStats(s, nov(21, 5));
+  eq(st.cur.rows.evening, { n: 3, of: 3 });
+  delete s.days['2026-11-03'];
+  eq(L.lifeStats(s, nov(1, 30, 4)).cur.rows.evening, { n: 2, of: 2 }, 'до 04:00 учорашній вечір ще можна підбити');
+  eq(L.lifeStats(s, nov(5, 0, 4)).cur.rows.evening, { n: 2, of: 3 }, 'після 04:00 непідбитий учорашній рахується');
+});
+
+test('Статистика: одна порада — про найслабше місце й лише коли даних досить', () => {
+  const s = fresh();
+  s.tasks.push(T('давня', 2, '2026-10-01', nov(8, 0, 1) - 40 * 864e5));
+  eq(L.lifeStats(s, nov(12, 0)).advice.id, 'thin');
+  // Ранки: 1 з 4 за планом, типове запізнення 12 хв.
+  for (const [d, spare] of [['2026-10-29', 5], ['2026-10-30', -10], ['2026-10-31', -20], ['2026-11-02', -12]]) s.mornings[d] = { at: nov(7, 0), spare };
+  let a = L.lifeStats(s, nov(12, 0)).advice;
+  eq([a.id, a.fact, a.act, a.btn.tab], ['morning', 'Ранок за планом — 1 з 4. Зазвичай бракує 12 хв.', 'Починайте на 15 хв раніше або скоротіть один крок.', 'morning']);
+  s.mornings = {};
+  // Справи: 0 з 6 у строк.
+  for (let i = 0; i < 6; i++) s.tasks.push(T(`п${i}`, 2, '2026-11-02'));
+  a = L.lifeStats(s, nov(12, 0)).advice;
+  eq([a.id, a.fact], ['tasks', 'У строк — 0 з 6 справ.']);
+  s.tasks = s.tasks.filter((x) => !x.title.startsWith('п'));
+  // Сімʼя і здоровʼя: категорії вживали, але цього тижня жодної такої справи.
+  s.tasks.push({ ...T('сімʼя давно', 2, '2026-10-01', 1, { cat: 'family' }), doneAt: Date.UTC(2026, 9, 1, 9) });
+  for (let i = 0; i < 3; i++) s.tasks.push({ ...T(`робота${i}`, 2, '2026-11-02', 1, { cat: 'work' }), doneAt: nov(10, i, 2) });
+  a = L.lifeStats(s, nov(12, 0)).advice;
+  eq([a.id, a.btn.act, a.btn.cat, a.btn.due], ['life', 'openAdd', 'family', 'tomorrow']);
+  s.tasks.push({ ...T('прогулянка', 3, '2026-11-02', 1, { cat: 'health' }), doneAt: nov(18, 0, 2) });
+  // Готовність: перевіряли колись, цього тижня — ні, а перевірка потрібна.
+  G.startCheck(s.gear, 'med', 'duty', nov(9, 0, 1) - 10 * 864e5);
+  for (const it of s.gear.cats.med.items) G.markItem(s.gear, 'med', it.id, 'ok', '');
+  G.finishCheck(s.gear, 'med', nov(9, 5, 1) - 10 * 864e5);
+  eq(L.lifeStats(s, nov(12, 0)).advice.id, 'checks');
+  for (const c of ['med', 'issued', 'personal', 'alarm', 'comms']) {
+    if (!s.gear.cats[c]) continue;
+    G.startCheck(s.gear, c, 'duty', nov(9, 0));
+    for (const it of s.gear.cats[c].items) G.markItem(s.gear, c, it.id, 'ok', '');
+    G.finishCheck(s.gear, c, nov(9, 5));
+  }
+  // Вечір: підбито 1 з 6 днів (сьогоднішній ще попереду).
+  s.days['2026-10-29'] = { at: nov(21, 0, 1), done: 1, moved: 0 };
+  a = L.lifeStats(s, nov(12, 0)).advice;
+  eq([a.id, a.fact, a.btn], ['evening', 'Вечір підбито — 1 з 6 днів.', null]);
+  eq(L.lifeStats(s, nov(19, 0)).advice.btn, { label: 'Підбити день', act: 'eveningOpen' }, 'увечері — кнопка підбити день');
+  // Усе гаразд: найбільше зростання відносно минулого тижня.
+  for (let d = 21; d <= 31; d++) if (d !== 26) s.days[`2026-10-${d}`] = { at: 1, done: 1, moved: 0 };
+  for (let d = 1; d <= 2; d++) s.days[`2026-11-0${d}`] = { at: 1, done: 1, moved: 0 };
+  for (const d of ['2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24']) delete s.days[d];
+  a = L.lifeStats(s, nov(12, 0)).advice;
+  eq([a.id, a.fact], ['keep', 'Вечір підбито — 6 з 6, минулого тижня — 2 з 7.']);
 });
 
 test('Таймер «Фокусу» рахує залишок', () => {

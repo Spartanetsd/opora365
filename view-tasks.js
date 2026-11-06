@@ -251,7 +251,10 @@ function taskFields(t, today, isNew) {
 function openAdd(app, el) {
   const type = el?.dataset?.type === 'must' ? 'must' : 'task';
   const today = app.today;
-  const blank = { pr: 2, due: today, time: '', deadline: '', cat: '', note: '', sub: [], rep: null };
+  // З поради «Статистики» форма може відкритися вже з категорією й датою («Сімʼя», завтра).
+  const cat = L.TCAT[el?.dataset?.cat] ? el.dataset.cat : '';
+  const due = el?.dataset?.due === 'tomorrow' ? L.addDays(today, 1) : today;
+  const blank = { pr: 2, due, time: '', deadline: '', cat, note: '', sub: [], rep: null };
   openSheet(`
   <form class="sheet-form" data-submit="addFromSheet" data-type="${type}" data-rep="" data-nodate="false" autocomplete="off">
     ${sheetHead(type === 'must' ? 'Не забути' : 'Нова справа', { cancel: 'Скасувати', done: 'Додати', submit: true })}

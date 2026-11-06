@@ -283,15 +283,15 @@ img { max-width: 100%; }
 :root[data-scheme="light"][data-bd] .topbar:not(.compact) .icon-btn { color: var(--text); background: rgba(255, 255, 255, .55); }
 :root[data-scheme="light"][data-bd] .topbar:not(.compact) .back-btn { color: var(--mode-ink); }
 
-/* Нижня навігація — плаваюча капсула з трьох розділів */
+/* Нижня навігація — плаваюча капсула з чотирьох розділів */
 .tabbar {
   position: fixed;
   left: max(16px, var(--safe-l)); right: max(16px, var(--safe-r));
   bottom: var(--tab-gap);
   max-width: 460px; margin: 0 auto;
   height: var(--tab-h);
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
   padding: 6px;
   border-radius: var(--r-pill);
   background: var(--glass-strong);
@@ -307,6 +307,8 @@ html.kb-open .tabbar, html.focus-mode .tabbar { transform: translateY(140%); opa
 .tab .i { width: 23px; height: 23px; transition: transform var(--d2) var(--spring); }
 .tab:active .i { transform: scale(.86); }
 .tab-label { font-size: 11px; font-weight: 650; letter-spacing: .005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; padding: 0 4px; }
+/* Чотири розділи на вузькому екрані (iPhone SE зі збільшеним інтерфейсом): підписи цілі. */
+@media (max-width: 340px) { .tab-label { font-size: 10px; letter-spacing: 0; padding: 0 2px; } }
 .tab.on { color: var(--mode-ink); background: rgba(var(--mode-rgb), .14); }
 .tab-ic { position: relative; display: grid; place-items: center; }
 .badge { position: absolute; top: -5px; left: 14px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--coral); color: #1F0606; font-size: 11px; font-weight: 750; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--bg-deep); }
@@ -928,32 +930,36 @@ button.vt-item:active { background: var(--track); }
 .url-state .i { width: 15px; height: 15px; }
 #toolsGrid { margin-top: 16px; }
 
-/* ---------- Підсумки тижня ---------- */
+/* ---------- Статистика: одна таблиця й одна порада ---------- */
+/* Таблиця — лише типографіка: без іконок і заливок. Єдиний акцент сторінки — порада. */
 
-.stats-card { padding: 16px 14px 12px; border-radius: var(--r-lg); background: var(--surface); border: .5px solid var(--line); box-shadow: var(--sh-1); margin-top: 18px; }
-.bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
-.bar { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.bar-n { flex: none; margin: 0 0 4px; font-size: var(--t-cap); font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text-2); }
-/* Без сірих «доріжок» на всю висоту: вони читалися як ціль на день. Порожній день — коротка риска. */
-.bar-col { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; width: 100%; max-width: 30px; height: 138px; }
-.bar-fill { display: block; flex: none; width: 100%; height: calc(var(--k, 0) * (100% - 24px)); min-height: 0; border-radius: 9px; background: linear-gradient(180deg, var(--teal), rgba(var(--teal-rgb), .55)); transform-origin: bottom; animation: grow var(--d3) var(--ease) both; }
-.bar-fill.is-empty { height: 4px; border-radius: 2px; background: var(--track); animation: none; }
-.bar-dot { flex: none; width: 6px; height: 6px; margin: 0 0 5px; border-radius: 50%; background: var(--cyan); }
-.bar-d { font-size: var(--t-cap); font-weight: 650; color: var(--text-2); }
-.bar.is-today .bar-d { color: var(--mode-ink); font-weight: 750; }
-.bar-m { min-height: 16px; color: var(--moon-ink); }
-.bar-m .i { width: 14px; height: 14px; }
-.legend-line { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 2px 0; font-size: var(--t-cap); color: var(--text-2); }
-.legend-line span { display: inline-flex; align-items: center; gap: 6px; }
-.legend-line .i { width: 13px; height: 13px; color: var(--moon-ink); }
-.lg-bar { width: 10px; height: 10px; border-radius: 3px; background: var(--teal); }
-.lg-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); }
-.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-.stat { display: flex; flex-direction: column; gap: 2px; padding: 14px; border-radius: var(--r-lg); background: var(--surface); border: .5px solid var(--line); }
-.stat-ic { color: var(--mode-ink); margin-bottom: 6px; }
-.stat-ic .i { width: 20px; height: 20px; }
-.stat b { font-family: var(--font-display); font-size: 1.8rem; font-weight: 600; line-height: 1; letter-spacing: -.03em; }
-.stat span:last-child { font-size: var(--t-meta); color: var(--text-2); line-height: 1.3; }
+.wk-card { margin-top: 8px; padding: 0 16px; border-radius: var(--r-lg); background: var(--surface); border: .5px solid var(--line); box-shadow: var(--sh-1); }
+.wk { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.wk th, .wk td { padding: 0; font-weight: inherit; }
+.wk thead th { padding: 13px 0 9px 6px; font-size: var(--t-cap); font-weight: 600; color: var(--text-2); text-align: right; white-space: nowrap; }
+.wk thead th:first-child { padding-left: 0; }
+.wk tbody > tr > * { padding-top: 14px; padding-bottom: 14px; border-top: .5px solid var(--line); vertical-align: baseline; }
+.wk tbody th { padding-right: 6px; text-align: left; font-weight: 600; line-height: 1.25; }
+.wk td { padding-left: 6px; text-align: right; white-space: nowrap; }
+.wk-cur { width: 1%; font-weight: 700; }
+.wk-prev { width: 1%; font-size: var(--t-small); color: var(--text-2); font-weight: 500; }
+@media (max-width: 390px) { .wk-card { padding: 0 14px; } }
+@media (min-width: 391px) { .wk thead th:last-child, .wk-prev { padding-left: 16px; } }
+/* Рядок, про який порада, — у кольорі поради. */
+.wk tr.is-focus .wk-cur { color: var(--mode-ink); }
+
+.advice { display: flex; align-items: flex-start; gap: 14px; margin-top: 8px; padding: 16px 16px 16px 14px; border-radius: var(--r-lg); background: rgba(var(--mode-rgb), .1); border: .5px solid rgba(var(--mode-rgb), .26); }
+.advice-ic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(var(--mode-rgb), .16); color: var(--mode-ink); }
+.advice-ic .i { width: 21px; height: 21px; }
+.advice-body { min-width: 0; padding-top: 1px; }
+.advice-fact { margin: 0; font-size: var(--t-h3); font-weight: 650; line-height: 1.32; letter-spacing: -.01em; text-wrap: pretty; }
+.advice-act { margin: 6px 0 0; color: var(--text-2); line-height: 1.45; text-wrap: pretty; }
+.advice-btn { margin-top: 14px; min-height: 44px; }
+
+.wk-how { margin-top: 22px; color: var(--text-2); font-size: var(--t-small); line-height: 1.45; }
+.wk-how ul { margin: 2px 0 10px; padding-left: 18px; }
+.wk-how li { margin: 0 0 6px; }
+.wk-how b { color: var(--text); font-weight: 600; }
 
 /* ---------- Нижня панель (sheet) ---------- */
 
@@ -1181,7 +1187,6 @@ html.modal-open .toast { bottom: calc(var(--safe-b) + 18px + var(--kb)); }
 @keyframes screen-in { from { opacity: 0; transform: scale(1.02); } to { opacity: 1; transform: none; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop { 0% { transform: scale(.5); opacity: 0; } 100% { transform: none; opacity: 1; } }
-@keyframes grow { from { transform: scaleY(0); } to { transform: none; } }
 @keyframes leave { to { opacity: 0; transform: translateX(14px) scale(.985); } }
 @keyframes flash { 0%, 100% { box-shadow: none; } 20% { box-shadow: 0 0 0 2px rgba(var(--mode-rgb), .85) inset; } }
 

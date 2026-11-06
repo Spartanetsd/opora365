@@ -21,7 +21,6 @@ export function openMenu(app) {
       ${row('menuGo', 'sunrise', 'Мій ранок', `${tpl.name}, підйом о ${L.fmtHM(L.computePlan(tpl).wake)}`, ' data-tab="morning"')}
       ${row('menuGo', 'list', 'Усі справи', `Пошук, без дати, архів. У роботі: ${tv.openCount + tv.upcoming.length + tv.nodate.length}`, ' data-tab="tasks"')}
       ${row('menuEvening', 'moon', 'Вечірній підсумок', 'Зроблене, перенесення, головне на завтра')}
-      ${row('menuGo', 'chart', 'Підсумки тижня', 'Лише факти, без оцінок', ' data-tab="stats"')}
       ${row('menuGo', 'apps', 'Інструменти', `Сайти й застосунки: ${app.state.tools.length}`, ' data-tab="tools"')}
     </div>
     <div class="list menu-list">

@@ -117,6 +117,7 @@ export function defaultState() {
     tools: defaultTools(),
     focus: null,
     days: {},
+    mornings: {},
   };
 }
 
@@ -864,28 +865,163 @@ export function closeDay(state, nowMs = Date.now(), moved = 0) {
   return ed.day;
 }
 
-/* ---------- Підсумки тижня ---------- */
+/* ---------- Статистика: якість тижня й одна порада ---------- */
 
-export function weekStats(state, nowMs = Date.now(), n = 7) {
-  const today = todayKey(nowMs);
-  const rows = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const d = addDays(today, -i);
-    rows.push({ date: d, tasks: 0, musts: 0, checks: 0, runs: 0, closed: !!state.days[d] });
+// Журнал ранків: дата ранку → { at: коли завершено підготовку, spare: план виходу − завершення, хв }.
+// Записуємо лише завершену підготовку (позначено всі кроки й речі) — без припущень.
+const MORNING_LOG_MAX = 90;
+export function logMorning(state) {
+  const s = state.session;
+  if (!s || !isKey(s.date)) return false;
+  const log = state.mornings || (state.mornings = {});
+  const had = log[s.date];
+  if (!s.finishedAt) {
+    if (!had) return false;
+    delete log[s.date];
+    return true;
   }
-  const idx = Object.fromEntries(rows.map((r, i) => [r.date, i]));
-  const add = (ms, f) => { if (!ms) return; const k = todayKey(ms); if (k in idx) rows[idx[k]][f]++; };
-  for (const t of state.tasks) if (!t.cancelledAt) add(t.doneAt, 'tasks');
-  for (const m of state.musts) add(m.doneAt, 'musts');
-  for (const c of state.gear.history) add(c.finishedAt, 'checks');
-  for (const r of state.deck.runs) add(r.finishedAt, 'runs');
-  const sum = (f) => rows.reduce((s, r) => s + r[f], 0);
-  return {
-    rows,
-    tasks: sum('tasks'), musts: sum('musts'), checks: sum('checks'), runs: sum('runs'),
-    closed: rows.filter((r) => r.closed).length,
-    max: Math.max(1, ...rows.map((r) => r.tasks + r.musts)),
-  };
+  if (had && had.at === s.finishedAt) return false;
+  const dep = dayNum(s.date) * DAY + computePlan(tplById(state, s.tpl)).departure;
+  log[s.date] = { at: s.finishedAt, spare: Math.max(-DAY, Math.min(DAY, dep - clockMin(localMin(s.finishedAt)))) };
+  const keys = Object.keys(log).sort();
+  while (keys.length > MORNING_LOG_MAX) delete log[keys.shift()];
+  return true;
+}
+
+// Рядки таблиці «Якість тижня»: дії, що тримають день і життя. Порядок — як минає день.
+export const QUALITY = [
+  { id: 'morning', name: 'Ранок за планом', how: 'готові не пізніше запланованого виходу; рахуються ранки, де позначено всі кроки й речі' },
+  { id: 'tasks', name: 'Справи в строк', how: 'справи цих днів, виконані у свій день і без перенесень; невиконані прострочені — теж у знаменнику; справи без дати — за днем виконання' },
+  { id: 'life', name: 'Сімʼя і здоровʼя', how: 'виконані справи з категоріями «Сімʼя» і «Здоровʼя»' },
+  { id: 'musts', name: 'Не забули', how: '«Не забути», позначені виконаними' },
+  { id: 'checks', name: 'Перевірки', how: 'завершені перевірки спорядження в «Готовності»' },
+  { id: 'evening', name: 'Вечір підбито', how: 'дні з вечірнім підсумком; сьогоднішній — коли його підбито' },
+];
+const QNAME = Object.fromEntries(QUALITY.map((q) => [q.id, q.name]));
+const LIFE_CATS = ['family', 'health'];
+
+// Початок місцевої доби в мілісекундах: межі тижнів порівнюємо з мітками часу напряму,
+// а дату з мітки визначаємо лише для подій усередині двох тижнів — так швидко навіть з архівом.
+function dayStartMs(key) {
+  const guess = dayNum(key) * 864e5;
+  return guess - (localMin(guess) - dayNum(key) * DAY) * 60e3;
+}
+
+// Перший день користування: від нього рахуються «дні» вечорів; раніше — «—», а не нуль.
+function firstDay(state, nowMs) {
+  let ms = nowMs;
+  const take = (v) => { if (v > 0 && v < ms) ms = v; };
+  for (const t of state.tasks) take(t.createdAt);
+  for (const m of state.musts) take(m.createdAt);
+  for (const c of state.gear.history) take(c.finishedAt);
+  for (const r of state.deck.runs) take(r.finishedAt);
+  let min = todayKey(ms);
+  for (const k of [...Object.keys(state.days), ...Object.keys(state.mornings || {}), state.session?.date || '']) if (k && k < min) min = k;
+  return min;
+}
+
+function emptyPeriod(from, to, active) {
+  return { from, to, active, rows: { morning: { n: 0, of: 0 }, tasks: { n: 0, of: 0 }, life: { n: 0 }, musts: { n: 0 }, checks: { n: 0 }, evening: { n: 0, of: 0 } }, late: [], done: 0, total: 0 };
+}
+
+export function lifeStats(state, nowMs = Date.now()) {
+  const today = todayKey(nowMs);
+  const since = firstDay(state, nowMs);
+  const eveDay = closeoutDay(nowMs);
+  const keys = { cur: [addDays(today, -6), today], prev: [addDays(today, -13), addDays(today, -7)] };
+  const P = {};
+  for (const [id, [from, to]] of Object.entries(keys)) P[id] = emptyPeriod(from, to, to >= since);
+  const winStart = dayStartMs(keys.prev[0]), curStart = dayStartMs(keys.cur[0]), winEnd = dayStartMs(addDays(today, 1));
+  const byMs = (ms) => (ms >= curStart && ms < winEnd ? P.cur : ms >= winStart && ms < curStart ? P.prev : null);
+  const byKey = (k) => (k >= keys.cur[0] && k <= today ? P.cur : k >= keys.prev[0] && k <= keys.prev[1] ? P.prev : null);
+
+  // Ранок за планом.
+  for (const [k, v] of Object.entries(state.mornings || {})) {
+    const p = byKey(k);
+    if (!p) continue;
+    p.rows.morning.of++;
+    if (v.spare >= 0) p.rows.morning.n++; else p.late.push(-v.spare);
+  }
+  // Справи в строк; «Сімʼя і здоровʼя».
+  for (const t of state.tasks) {
+    if (t.cancelledAt) continue;
+    let p = null, ok = false;
+    if (t.doneAt) {
+      if (t.doneAt < winStart) continue;
+      const dd = todayKey(t.doneAt);
+      ok = (!t.due || dd <= t.due) && !t.moved && (!t.deadline || dd <= t.deadline);
+      // Виконане із запізненням — у тижні, на який справу планували; вчасне — у день виконання.
+      p = byKey(t.due && t.due < dd ? t.due : dd);
+      const pd = byKey(dd);
+      if (pd) { pd.done++; if (LIFE_CATS.includes(t.cat)) pd.rows.life.n++; }
+    } else if (t.due && t.due < today) {
+      p = byKey(t.due);
+    }
+    if (!p) continue;
+    p.rows.tasks.of++;
+    if (ok) p.rows.tasks.n++;
+  }
+  for (const m of state.musts) { const p = m.doneAt ? byMs(m.doneAt) : null; if (p) p.rows.musts.n++; }
+  for (const c of state.gear.history) { const p = byMs(c.finishedAt); if (p) p.rows.checks.n++; }
+  // Вечір підбито: дні від першого дня користування; сьогоднішній — лише коли вже підбито.
+  for (const p of [P.cur, P.prev]) {
+    for (let k = p.from; k <= p.to; k = addDays(k, 1)) {
+      if (k < since || k > eveDay) continue;
+      const closed = !!state.days[k];
+      if (k === eveDay && !closed) continue;
+      p.rows.evening.of++;
+      if (closed) p.rows.evening.n++;
+    }
+    const r = p.rows;
+    p.total = r.morning.of + r.tasks.of + r.musts.n + r.checks.n + r.evening.n;
+  }
+  return { today, since, cur: P.cur, prev: P.prev, any: P.cur.total + P.prev.total > 0, advice: advise(state, P.cur, P.prev, nowMs) };
+}
+
+const genOf = (n, forms) => `${n} ${plural(n, forms)}`;
+
+// Одна порада — про найслабше місце тижня, і лише коли даних досить. Числа — ті самі, що в таблиці.
+function advise(state, cur, prev, nowMs) {
+  const r = cur.rows;
+  const m = r.morning;
+  if (m.of >= 3 && m.n / m.of < 0.6) {
+    const late = cur.late.slice().sort((a, b) => a - b);
+    const typical = late[Math.floor((late.length - 1) / 2)];
+    const plus = Math.max(5, Math.ceil(typical / 5) * 5);
+    return { id: 'morning', row: 'morning', icon: 'sunrise', fact: `Ранок за планом — ${m.n} з ${m.of}. Зазвичай бракує ${fmtDur(typical)}.`, act: `Починайте на ${fmtDur(plus)} раніше або скоротіть один крок.`, btn: { label: 'Мій ранок', act: 'tab', tab: 'morning' } };
+  }
+  const t = r.tasks;
+  if (t.of >= 5 && t.n / t.of < 0.6) {
+    return { id: 'tasks', row: 'tasks', icon: 'checkCircle', fact: `У строк — ${t.n} з ${genOf(t.of, ['справи', 'справ', 'справ'])}.`, act: 'Плануйте на день не більше трьох важливих справ. Сказати «ні» зайвому — теж рішення.', btn: { label: 'Усі справи', act: 'tab', tab: 'tasks' } };
+  }
+  const usesLife = state.tasks.some((x) => LIFE_CATS.includes(x.cat));
+  if (usesLife && cur.done >= 3 && r.life.n === 0) {
+    return { id: 'life', row: 'life', icon: 'heart', fact: 'За тиждень — жодної справи для сімʼї чи здоровʼя.', act: 'Заплануйте одну на завтра. Навіть пів години мають значення.', btn: { label: 'Запланувати', act: 'openAdd', cat: 'family', due: 'tomorrow' } };
+  }
+  const gs = gearSummary(state.gear, nowMs);
+  if (state.gear.history.length && r.checks.n === 0 && (gs.needs || gs.issues)) {
+    return { id: 'checks', row: 'checks', icon: 'shieldCheck', fact: 'Цього тижня готовність не перевіряли.', act: 'Одна перевірка — кілька хвилин, і ви певні у спорядженні.', btn: { label: 'Перевірити', act: 'tab', tab: 'gear' } };
+  }
+  const e = r.evening;
+  if (Object.keys(state.days).length && e.of >= 4 && e.n / e.of < 0.5) {
+    const now = modeInfo(state, nowMs).id;
+    const open = (now === 'evening' || now === 'rest') && !state.days[closeoutDay(nowMs)];
+    return { id: 'evening', row: 'evening', icon: 'moon', fact: `Вечір підбито — ${e.n} з ${genOf(e.of, ['дня', 'днів', 'днів'])}.`, act: 'Дві хвилини ввечері: що зроблено, що перенести, що головне завтра. Ранок почнеться з плану.', btn: open ? { label: 'Підбити день', act: 'eveningOpen' } : null };
+  }
+  if (cur.total < 3) {
+    return { id: 'thin', row: '', icon: 'info', fact: 'Цього тижня даних ще мало.', act: 'Позначайте зроблене: кроки ранку, справи, вечірній підсумок. Порада стане точною.', btn: null };
+  }
+  let best = null;
+  for (const id of ['morning', 'tasks', 'evening']) {
+    const a = r[id], b = prev.rows[id];
+    if (a.of < 3 || b.of < 3) continue;
+    const d = a.n / a.of - b.n / b.of;
+    if (d >= 0.15 && (!best || d > best.d)) best = { id, d, a, b };
+  }
+  if (best) {
+    return { id: 'keep', row: best.id, icon: 'sparkline', fact: `${QNAME[best.id]} — ${best.a.n} з ${best.a.of}, минулого тижня — ${best.b.n} з ${best.b.of}.`, act: 'Тримайте цей ритм. Не додавайте нового, доки він не стане звичкою.', btn: null };
+  }
+  return { id: 'steady', row: '', icon: 'checkCircle', fact: 'Помітних провалів цього тижня немає.', act: 'Не додавайте нового — повторіть цей ритм ще тиждень.', btn: null };
 }
 
 /* ---------- Таймер «Фокусу» ---------- */
@@ -1142,6 +1278,12 @@ export function cleanState(raw, nowMs = Date.now()) {
       if (isKey(k) && plain(v) && stamp(v.at)) days[k] = { at: stamp(v.at), done: int(v.done, 0, 9999, 0), moved: int(v.moved, 0, 9999, 0) };
     }
   }
+  const mornings = {};
+  if (plain(raw.mornings)) {
+    for (const [k, v] of Object.entries(raw.mornings).sort(([a], [b]) => cmpKey(a, b)).slice(-MORNING_LOG_MAX)) {
+      if (isKey(k) && plain(v) && stamp(v.at)) mornings[k] = { at: stamp(v.at), spare: int(v.spare, -DAY, DAY, 0) };
+    }
+  }
 
   return {
     state: {
@@ -1151,6 +1293,7 @@ export function cleanState(raw, nowMs = Date.now()) {
       tools: cleanTools(raw.tools),
       focus,
       days,
+      mornings,
     },
     dropped: counter.dropped,
     from,

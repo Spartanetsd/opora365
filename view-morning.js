@@ -389,6 +389,8 @@ function updateSession(app, fn) {
     const st = L.sessionStatus(s, s.session, Date.now());
     finished = st.complete && !s.session.finishedAt;
     s.session.finishedAt = st.complete ? s.session.finishedAt || Date.now() : 0;
+    // Завершений ранок — у журнал «Статистики»; зняли позначку — запис прибирається.
+    L.logMorning(s);
   });
   if (finished) { haptic(); toast('Ранкову підготовку завершено. Гарного дня!', null, 3200, 'check'); }
 }

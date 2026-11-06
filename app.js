@@ -1,9 +1,9 @@
-// ОПОРА 365 — ядро: стан, три вкладки й вкладені сторінки, фонові зображення, оновлення часу,
+// ОПОРА 365 — ядро: стан, чотири вкладки й вкладені сторінки, фонові зображення, оновлення часу,
 // тема й режим, офлайн, обробка помилок.
 import * as L from './logic.js';
 import * as G from './logic-gear.js';
 import * as store from './store.js';
-import { $, $$, icon, toast, closeSheet, initDialogs, reduceMotion, setHaptics, screenOpen } from './ui.js';
+import { $, $$, esc, icon, toast, closeSheet, initDialogs, reduceMotion, setHaptics, screenOpen } from './ui.js';
 import { animateRings, errorState } from './components.js';
 import home from './view-home.js';
 import morning from './view-morning.js';
@@ -16,17 +16,18 @@ import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.0.7';
+const VERSION = '3.1.0';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools, stats };
 const TABS = [
   { id: 'home', name: 'Сьогодні', icon: 'sun' },
   { id: 'gear', name: 'Готовність', icon: 'shieldCheck' },
   { id: 'deck', name: 'Швидка дія', icon: 'chevrons' },
+  { id: 'stats', name: 'Статистика', icon: 'chart' },
 ];
 // Вкладені сторінки: до якої вкладки належать і куди веде «Назад».
-const PARENT = { morning: 'home', tasks: 'home', stats: 'home', tools: 'deck' };
-const PARENT_NAME = { home: 'Сьогодні', gear: 'Готовність', deck: 'Швидка дія' };
+const PARENT = { morning: 'home', tasks: 'home', tools: 'deck' };
+const PARENT_NAME = { home: 'Сьогодні', gear: 'Готовність', deck: 'Швидка дія', stats: 'Статистика' };
 
 const app = {
   version: VERSION,
@@ -51,13 +52,20 @@ const app = {
   go(tab, sub = '', { replace = false } = {}) {
     if (!VIEWS[tab]) return;
     const same = tab === this.route.tab && sub === this.route.sub;
+    // Підпис «Назад» — назва сторінки, яку залишаємо (для вкладки — назва розділу).
+    const leaving = this.route;
+    const lv = VIEWS[leaving.tab];
+    const back = leaving.sub || PARENT[leaving.tab] ? (typeof lv.title === 'function' ? lv.title(this) : lv.title) : PARENT_NAME[leaving.tab] || '';
     this.route = { tab, sub };
     const hash = `#${tab}${sub ? `/${sub}` : ''}`;
     if (location.hash !== hash) {
       // Вкладки не накопичують історію; вкладені сторінки — так, щоб «Назад» повертав на місце.
       const nested = !!sub || !!PARENT[tab];
-      if (nested && !replace) history.pushState('sub', '', hash);
-      else history.replaceState('root', '', hash);
+      if (nested && !replace) {
+        // «Назад» підписано тим, куди він веде (зі «Статистики» в «Мій ранок» — «‹ Статистика»);
+        // підпис зберігається в самому записі історії, тож після повернення він правильний.
+        history.pushState({ sub: true, back }, '', hash);
+      } else history.replaceState('root', '', hash);
     }
     this.render({ enter: !same });
     window.scrollTo({ top: 0, behavior: same && !reduceMotion() ? 'smooth' : 'auto' });
@@ -93,7 +101,7 @@ const app = {
 const ACTIONS = {
   tab: (a, el) => a.go(el.dataset.tab, el.dataset.sub || ''),
   back: () => {
-    if (history.state === 'sub') history.back();
+    if (history.state?.sub) history.back();
     else app.go(PARENT[app.route.tab] || app.route.tab);
   },
   sheetClose: () => closeSheet(),
@@ -289,9 +297,11 @@ function renderChrome() {
   const ch = mod.chrome ? mod.chrome(app) : {};
   const nested = !!app.route.sub || !!PARENT[app.route.tab];
   const parent = PARENT[app.route.tab] || app.route.tab;
-  const back = nested ? `<button type="button" class="back-btn" data-act="back">${icon('back')}<span>${ch.backLabel || PARENT_NAME[parent] || 'Назад'}</span></button>` : '';
+  // Після перезапуску на вкладеній сторінці історії немає — тоді «Назад» веде до батьківського розділу.
+  const backTo = (history.state?.sub && history.state.back) || PARENT_NAME[parent];
+  const back = nested ? `<button type="button" class="back-btn" data-act="back">${icon('back')}<span>${esc(ch.backLabel || backTo || 'Назад')}</span></button>` : '';
   $('#tbLeft').innerHTML = back || ch.left || '';
-  $('#tbActions').innerHTML = (ch.right || '') + `<button type="button" class="icon-btn" data-act="openMenu" aria-label="Меню: ранок, справи, підсумки, інструменти, налаштування">${icon('more')}</button>`;
+  $('#tbActions').innerHTML = (ch.right || '') + `<button type="button" class="icon-btn" data-act="openMenu" aria-label="Меню: ранок, справи, інструменти, налаштування">${icon('more')}</button>`;
   $('#tbTitle').textContent = typeof mod.title === 'function' ? mod.title(app) : mod.title;
 }
 
@@ -480,6 +490,8 @@ window.addEventListener('unhandledrejection', (e) => console.error(e.reason));
 async function boot() {
   const { state, fresh } = await store.load();
   app.state = L.purge(state);
+  // Ранок, завершений до оновлення, теж потрапляє в «Статистику».
+  if (L.logMorning(app.state)) store.save(app.state);
   app.day = L.todayKey();
   app.standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   setHaptics(app.state.settings.haptics);
@@ -500,7 +512,7 @@ async function boot() {
   registerSW();
   if (store.status.migratedFrom) {
     store.save(app.state);
-    toast('ОПОРА 365 оновлено: три розділи й новий вигляд. Дані збережено', null, 5600, 'check');
+    toast('ОПОРА 365 оновлено: чотири розділи й новий вигляд. Дані збережено', null, 5600, 'check');
   }
   if (!app.state.settings.onboarded && fresh) openWelcome(app);
   else if (!app.state.settings.onboarded) app.commit((s) => { s.settings.onboarded = true; }, { render: false });
