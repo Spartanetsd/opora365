@@ -2,7 +2,7 @@
 // пульс дня, вечірній підсумок, дані. Модуль використовують і застосунок, і тести (tests.js).
 import {
   DAY, parseHM, fmtHM, fmtDur, todayKey, dayNum, dateFromNum, addDays, diffDays, isKey,
-  localMin, minOfDay, keyOfLocal, localAt, weekday, shortDate, plural, count, daysWord, relIn, uid, WD_S,
+  localMin, minOfDay, keyOfLocal, localAt, weekday, shortDate, plural, count, daysWord, relIn, uid, WD_S, greeting,
 } from './time.js';
 import { defaultGear, cleanGear, gearSummary } from './logic-gear.js';
 import { defaultDeck, cleanDeck, defaultTools, cleanTools, runProgress } from './logic-deck.js';
@@ -44,8 +44,9 @@ const CAT_V2 = { docs: 'work', train: 'study', buy: 'home' };
 export const MODES = [
   { id: 'morning', name: 'Ранок', icon: 'sunrise', tone: 'amber', hint: 'Підготовка і вихід' },
   { id: 'day', name: 'День', icon: 'sun', tone: 'blue', hint: 'Справи за пріоритетами' },
+  { id: 'evening', name: 'Вечір', icon: 'sunset', tone: 'violet', hint: 'Підсумок дня і план на завтра' },
+  { id: 'rest', name: 'Відпочинок', icon: 'moon', tone: 'moon', hint: 'Ніч: лише найважливіше' },
   { id: 'ready', name: 'Готовність', icon: 'shieldCheck', tone: 'teal', hint: 'Перевірки і сценарії на першому місці' },
-  { id: 'rest', name: 'Відпочинок', icon: 'moon', tone: 'moon', hint: 'Лише важливе й підсумок дня' },
 ];
 export const MODE = Object.fromEntries(MODES.map((m) => [m.id, m]));
 export const REPEATS = [
@@ -97,7 +98,7 @@ export function defaultMorning() {
 /* ---------- Стан за замовчуванням ---------- */
 
 export function defaultSettings() {
-  return { theme: 'dark', lastBackupAt: 0, installHint: true, name: '', mode: { id: 'auto', until: 0 }, restAt: '21:00', haptics: true, onboarded: false };
+  return { theme: 'dark', lastBackupAt: 0, installHint: true, name: '', mode: { id: 'auto', until: 0 }, eveningAt: '18:00', restAt: '22:00', haptics: true, onboarded: false };
 }
 export function defaultState() {
   return {
@@ -506,15 +507,47 @@ export function moveMust(m, date) {
 
 /* ---------- Режими дня ---------- */
 
-export function autoMode(state, nowMs = Date.now()) {
-  const sm = morningSummary(state, nowMs);
-  if (sm.phase === 'running') return 'morning';
-  if (sm.rel === 0 && sm.now >= sm.wakeAt - 60 && sm.now < sm.depAt) return 'morning';
-  const min = minOfDay(sm.now);
-  const restAt = parseHM(state.settings.restAt) ?? 1260;
-  if (min >= restAt || min < 240) return 'rest';
-  return 'day';
+// Розклад доби для автоматичного режиму:
+//   ранок — за годину до підйому, але не пізніше 05:00, і до виходу (не довше полудня, якщо підготовку не почато);
+//   день — до «Вечір з»; вечір — до «Відпочинок з»; відпочинок — до наступного ранку.
+// Підготовка, що триває, — завжди ранок; завершена — ранок закінчився.
+export const MORNING_FROM = 300; // 05:00
+const MORNING_CAP = 720; // 12:00
+// «Відпочинок з» раніше за «Вечір з» означає час після півночі (напр. 00:30).
+export function dayParts(state) {
+  const evening = parseHM(state.settings.eveningAt) ?? 1080;
+  let rest = parseHM(state.settings.restAt) ?? 1320;
+  if (rest <= evening) rest += DAY;
+  return { evening, rest };
 }
+export function autoPlan(state, nowMs = Date.now()) {
+  const sm = morningSummary(state, nowMs);
+  const now = sm.now, base = Math.floor(now / DAY) * DAY, min = now - base;
+  const { evening, rest } = dayParts(state);
+  if (sm.phase === 'running') return { id: 'morning', until: Math.max(sm.depAt, now), by: 'run', sm };
+  const today = sm.rel === 0 && sm.phase !== 'finished';
+  const from = today ? Math.max(0, Math.min(sm.wakeAt - base - 60, MORNING_FROM)) : MORNING_FROM;
+  const to = today ? Math.min(sm.depAt - base, MORNING_CAP) : 0;
+  if (min < from) {
+    // Після півночі: якщо відпочинок пізніше за північ — ще вечір.
+    const late = Math.min(Math.max(rest - DAY, 0), from);
+    if (min < late) return { id: 'evening', until: base + late, by: 'clock', sm };
+    return { id: 'rest', until: base + from, by: 'night', sm };
+  }
+  if (min < to) return { id: 'morning', until: base + to, by: to === sm.depAt - base ? 'dep' : 'noon', sm };
+  if (min < evening) return { id: 'day', until: base + evening, by: 'clock', sm };
+  // Ранок наступного дня: за годину до підйому, не пізніше 05:00.
+  const nextFrom = sm.rel === 1 ? Math.max(0, Math.min(sm.wakeAt - base - DAY - 60, MORNING_FROM)) : MORNING_FROM;
+  const restAt = Math.min(rest, DAY + nextFrom);
+  if (min < restAt) return { id: 'evening', until: base + restAt, by: 'clock', sm };
+  return { id: 'rest', until: base + DAY + nextFrom, by: 'night', sm };
+}
+export function autoMode(state, nowMs = Date.now()) {
+  return autoPlan(state, nowMs).id;
+}
+// Привітання — за тією ж частиною доби, що й автоматичний режим: «Доброго ранку» й «Ранок» не розходяться.
+const GREET = { morning: 'Доброго ранку', day: 'Доброго дня', evening: 'Доброго вечора', rest: 'Доброї ночі' };
+export const greetingFor = (autoId, min) => GREET[autoId] || greeting(min);
 
 export function modeInfo(state, nowMs = Date.now()) {
   const now = localMin(nowMs);
@@ -571,7 +604,7 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     } else if (st.needEss) {
       out.push({ key: 'ess', kind: 'ess', rank: 10, title: 'Вихід без забутого', reason: `Перевірте перед виходом: ще ${st.essTotal - st.essDone} з ${st.essTotal}`, level: 'normal', icon: 'checkCircle', defer: false });
     }
-  } else if (sm.rel === 0 && mode !== 'rest' && (sm.phase === 'window' || (sm.phase === 'before' && mode === 'morning' && sm.toWake <= 60))) {
+  } else if (sm.rel === 0 && mode !== 'rest' && mode !== 'evening' && (sm.phase === 'window' || (sm.phase === 'before' && mode === 'morning' && sm.toWake <= 60))) {
     const key = `morning:${sm.date}`;
     if (free(key)) {
       out.push({
@@ -615,6 +648,8 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     else if (pinned) rank = mode === 'rest' ? 31 : 19;
     else if (dl != null && dl <= 0) rank = mode === 'rest' ? 31 : 21;
     else if (mode === 'rest') rank = t.pr === 1 ? (overdue ? 31 : 32) : 60 + t.pr;
+    // Увечері головне лишається першим, а «Важливо» й «Можна пізніше» поступаються підсумку дня.
+    else if (mode === 'evening') rank = t.pr === 1 ? (overdue ? 22 : 24) : 40 + t.pr * 2 - (overdue ? 1 : 0);
     else rank = t.pr === 1 ? (overdue ? 22 : 24) : 26 + t.pr * 2 - (overdue ? 1 : 0) - (dl === 1 ? 1 : 0);
     const parts = [pinned ? 'Головне на сьогодні' : PR[t.pr].name];
     if (dl != null && dl < 0) parts.push(dl === -1 ? 'дедлайн минув учора' : `дедлайн минув ${daysWord(-dl)} тому`);
@@ -644,7 +679,7 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
   }
 
   // Готовність
-  const RANKS = { issues: { ready: 15, day: 33, morning: 50, rest: 34 }, needs: { ready: 16, day: 36, morning: 52, rest: 35 } };
+  const RANKS = { issues: { ready: 15, day: 33, morning: 50, evening: 34, rest: 34 }, needs: { ready: 16, day: 36, morning: 52, evening: 38, rest: 35 } };
   for (const c of gearSummary(state.gear, nowMs).cats) {
     const s = c.st.s;
     if (s !== 'issues' && s !== 'needs') continue;
@@ -653,18 +688,18 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     out.push({ key, kind: 'gear', cat: c.id, rank: RANKS[s][mode], title: s === 'issues' ? `Усунути проблеми: ${c.name}` : `Перевірити: ${c.name}`, reason: c.st.text, level: s === 'issues' ? 'warn' : 'normal', icon: c.icon, defer: true, fix: s === 'issues' });
   }
 
-  // Вечір: підсумок дня
-  if (mode === 'rest') {
+  // Вечір: підсумок дня — головна вечірня справа; уночі — тихіше
+  if (mode === 'evening' || mode === 'rest') {
     const day = closeoutDay(nowMs);
     const key = `evening:${day}`;
-    if (!state.days[day] && free(key)) out.push({ key, kind: 'evening', rank: 70, title: 'Підбити підсумок дня', reason: 'Що зроблено, що перенести і що головне завтра', level: 'normal', icon: 'moon', defer: true });
+    if (!state.days[day] && free(key)) out.push({ key, kind: 'evening', rank: mode === 'evening' ? 36 : 70, title: 'Підбити підсумок дня', reason: 'Що зроблено, що перенести і що головне завтра', level: 'normal', icon: 'sunset', defer: true });
   }
 
   // Резервна копія
   const hasData = state.tasks.length + state.musts.length + state.gear.history.length > 0;
   const lb = state.settings.lastBackupAt;
   const stale = !lb || diffDays(todayKey(lb), today) > 7;
-  if (hasData && stale && (mode === 'day' || mode === 'rest') && free('backup')) {
+  if (hasData && stale && (mode === 'day' || mode === 'evening' || mode === 'rest') && free('backup')) {
     out.push({ key: 'backup', kind: 'backup', rank: 80, title: 'Створити резервну копію', reason: lb ? `Остання копія ${daysWord(diffDays(todayKey(lb), today))} тому` : 'Копій ще не було', level: 'normal', icon: 'share', defer: true });
   }
 
@@ -891,6 +926,18 @@ function cleanRep(r, due) {
   return null;
 }
 
+// До 3.0.6 був один час — «Вечір з» (поле restAt), з нього вмикався «Відпочинок».
+// Тепер два: «Вечір з» і «Відпочинок з». Старе типове 21:00 → нові типові 18:00 і 22:00;
+// свій час користувача лишається «Вечір з», а відпочинок — з 22:00 (або за годину після вечора).
+function cleanDayParts(st, d) {
+  const ev = parseHM(st.eveningAt), rest = parseHM(st.restAt);
+  if (st.eveningAt == null) {
+    if (rest == null || rest === 1260) return { eveningAt: d.eveningAt, restAt: d.restAt };
+    return { eveningAt: fmtHM(rest), restAt: fmtHM(Math.min(Math.max(1320, rest + 60), 1439)) };
+  }
+  return { eveningAt: ev == null ? d.eveningAt : fmtHM(ev), restAt: rest == null ? d.restAt : fmtHM(rest) };
+}
+
 function cleanSettings(st) {
   const d = defaultSettings();
   if (!plain(st)) return d;
@@ -901,7 +948,7 @@ function cleanSettings(st) {
     installHint: st.installHint !== false,
     name: str(st.name, 40).trim(),
     mode: mode.id === 'auto' ? { id: 'auto', until: 0 } : mode,
-    restAt: parseHM(st.restAt) == null ? d.restAt : fmtHM(parseHM(st.restAt)),
+    ...cleanDayParts(st, d),
     haptics: st.haptics !== false,
     onboarded: st.onboarded === true,
   };

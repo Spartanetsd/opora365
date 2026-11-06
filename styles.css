@@ -40,6 +40,7 @@
   --amber: var(--c-amber); --amber-ink: var(--c-amber); --amber-rgb: 255, 190, 100;
   --coral: #FF8F87; --coral-ink: #FF9C95; --coral-rgb: 255, 143, 135;
   --moon: #A9B8E8; --moon-ink: #B8C5EE; --moon-rgb: 169, 184, 232;
+  --violet: #C4A7FF; --violet-ink: #CFB8FF; --violet-rgb: 196, 167, 255;
   --slate: #8A9AB2; --slate-ink: #A0AEC0; --slate-rgb: 138, 154, 178;
 
   --grad-primary: linear-gradient(135deg, #63D8FF 0%, #58DCC5 100%);
@@ -86,6 +87,7 @@
 }
 :root[data-mode="morning"] { --mode: var(--amber); --mode-ink: var(--amber-ink); --mode-rgb: var(--amber-rgb); }
 :root[data-mode="ready"] { --mode: var(--teal); --mode-ink: var(--teal-ink); --mode-rgb: var(--teal-rgb); }
+:root[data-mode="evening"] { --mode: var(--violet); --mode-ink: var(--violet-ink); --mode-rgb: var(--violet-rgb); }
 :root[data-mode="rest"] { --mode: var(--moon); --mode-ink: var(--moon-ink); --mode-rgb: var(--moon-rgb); }
 
 /* Світла тема: власні поверхні, тіні й глибші відтінки акцентів для контрасту */
@@ -111,6 +113,7 @@
   --amber: #C98318; --amber-ink: #8A5208; --amber-rgb: 201, 131, 24;
   --coral: #D9534A; --coral-ink: #B2372F; --coral-rgb: 217, 83, 74;
   --moon: #6E80C4; --moon-ink: #4A5B97; --moon-rgb: 110, 128, 196;
+  --violet: #8063D6; --violet-ink: #5C40B0; --violet-rgb: 128, 99, 214;
   --slate: #7A8AA1; --slate-ink: #46566B; --slate-rgb: 122, 138, 161;
   --grad-primary: linear-gradient(135deg, #0B6F95 0%, #0A7462 100%);
   --grad-amber: linear-gradient(135deg, #B26F0E 0%, #8F5508 100%);
@@ -1205,5 +1208,6 @@ html.modal-open .toast { bottom: calc(var(--safe-b) + 18px + var(--kb)); }
 [data-tone="amber"] { --tone: var(--amber); --tone-ink: var(--amber-ink); --tone-rgb: var(--amber-rgb); }
 [data-tone="coral"] { --tone: var(--coral); --tone-ink: var(--coral-ink); --tone-rgb: var(--coral-rgb); }
 [data-tone="moon"] { --tone: var(--moon); --tone-ink: var(--moon-ink); --tone-rgb: var(--moon-rgb); }
+[data-tone="violet"] { --tone: var(--violet); --tone-ink: var(--violet-ink); --tone-rgb: var(--violet-rgb); }
 [data-tone="slate"] { --tone: var(--slate); --tone-ink: var(--slate-ink); --tone-rgb: var(--slate-rgb); }
 [data-tone="mode"] { --tone: var(--mode); --tone-ink: var(--mode-ink); --tone-rgb: var(--mode-rgb); }

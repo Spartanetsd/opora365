@@ -24,7 +24,7 @@ function ritualTiles(app, nowMs) {
   const day = L.closeoutDay(nowMs);
   const closed = !!s.days[day];
   const mode = L.modeInfo(s, nowMs).id;
-  const eSub = closed ? 'Підсумок підбито' : mode === 'rest' ? 'Час підбити підсумок' : 'Зроблене, перенесення, завтра';
+  const eSub = closed ? 'Підсумок підбито' : mode === 'evening' || mode === 'rest' ? 'Час підбити підсумок' : 'Зроблене, перенесення, завтра';
   return `<div class="rituals">
     <button type="button" class="ritual" data-act="tab" data-tab="morning">
       <img class="ritual-bg" src="abstract-05.webp" alt="" loading="lazy" decoding="async"><span class="ritual-shade" aria-hidden="true"></span>
@@ -102,7 +102,7 @@ function render(app) {
   return `<div class="page page-home">
     <section class="today" aria-labelledby="todayDate">
       <div class="today-top">
-        <p class="greet"><span>${L.greeting(L.minOfDay(now))}${name}</span><time class="clock">${L.fmtHM(now)}</time></p>
+        <p class="greet"><span>${L.greetingFor(na.mode.auto, L.minOfDay(now))}${name}</span><time class="clock">${L.fmtHM(now)}</time></p>
         <h1 class="today-date" id="todayDate" data-title-anchor>${L.dayMonth(today)}</h1>
         <div class="today-meta"><span class="today-wd">${L.weekdayName(today)}</span>${modeChip(na.mode)}</div>
       </div>
@@ -207,9 +207,20 @@ async function naOther(app) {
 
 /* ---------- Режим дня ---------- */
 
+// Чому зараз саме цей режим і до коли — замість загального «за часом і планом».
+function autoWhy(app) {
+  const p = L.autoPlan(app.state);
+  const end = L.homeDay(p.sm.tpl) ? 'початку дня' : 'виходу';
+  const until = p.by === 'run' ? 'поки триває підготовка'
+    : p.by === 'dep' ? `до ${end} о ${L.fmtHM(p.until)}`
+      : p.by === 'night' ? `до ранку, ${L.fmtHM(p.until)}`
+        : `до ${L.fmtHM(p.until)}`;
+  return `Зараз «${L.MODE[p.id].name}», ${until}`;
+}
+
 function openMode(app) {
   const mi = L.modeInfo(app.state);
-  const auto = L.MODE[mi.auto];
+  const s = app.state.settings;
   const row = (id, name, hint, ic, tone) => {
     const on = id === 'auto' ? !mi.manual : mi.manual && mi.id === id;
     return `<button type="button" class="row row-btn mode-row" role="radio" aria-checked="${on}" data-tone="${tone}" data-act="setModeAct" data-v="${id}">
@@ -220,12 +231,12 @@ function openMode(app) {
   };
   openSheet(`${sheetHead('Режим дня')}
     <div class="list mode-list" role="radiogroup" aria-label="Режим дня">
-      ${row('auto', 'Автоматично', `Зараз «${auto.name}»: за часом і ранковим планом`, 'reset', 'slate')}
+      ${row('auto', 'Автоматично', autoWhy(app), 'reset', 'slate')}
       ${L.MODES.map((m) => row(m.id, m.name, m.hint, m.icon, m.tone)).join('')}
     </div>
     <h3 class="sub-h">Ручний режим діє</h3>
     ${seg('Тривалість', [{ id: 'day', name: 'До кінця дня' }, { id: 'off', name: 'До скасування' }], app.ui.modeLen || 'day', 'modeLen')}
-    <p class="foot">Режим змінює акценти й порядок наступних дій. Дані не змінюються.</p>`, { label: 'Режим дня' });
+    <p class="foot">Автоматично: ранок — до ${L.homeDay(L.planTpl(app.state)) ? 'початку дня' : 'виходу'}, день — до ${esc(s.eveningAt)}, вечір — до ${esc(s.restAt)}, далі відпочинок до ранку. Час вечора й відпочинку — у налаштуваннях. Режим змінює лише акценти й порядок наступних дій.</p>`, { label: 'Режим дня' });
 }
 
 const actions = {

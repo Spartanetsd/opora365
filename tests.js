@@ -347,9 +347,10 @@ test('«Не забути»: «Перенести» лишає у списку, 
 
 /* ---------- Режими і наступна дія ---------- */
 
-test('Автоматичний режим: ранок, день, відпочинок; ручний — до кінця доби', () => {
+test('Автоматичний режим: ранок, день, вечір, відпочинок; ручний — до кінця доби', () => {
   const s = fresh();
-  eq([L.autoMode(s, nov(5, 50)), L.autoMode(s, nov(7, 40)), L.autoMode(s, nov(21, 30)), L.autoMode(s, nov(2, 0))], ['morning', 'day', 'rest', 'rest']);
+  eq([L.autoMode(s, nov(5, 50)), L.autoMode(s, nov(7, 40)), L.autoMode(s, nov(21, 30)), L.autoMode(s, nov(2, 0))], ['morning', 'day', 'evening', 'rest']);
+  eq([L.autoMode(s, nov(4, 59)), L.autoMode(s, nov(17, 59)), L.autoMode(s, nov(18, 0)), L.autoMode(s, nov(22, 0))], ['rest', 'day', 'evening', 'rest']);
   L.setMode(s, 'ready', true, nov(12, 0));
   eq(L.modeInfo(s, nov(23, 50)).id, 'ready');
   eq(L.modeInfo(s, nov(8, 0, 4)).id, 'day', 'наступного дня — знову авто');
@@ -357,6 +358,27 @@ test('Автоматичний режим: ранок, день, відпочи�
   eq(L.modeInfo(s, nov(8, 0, 9)).id, 'rest', 'до скасування');
   L.setMode(s, 'auto');
   eq(L.modeInfo(s, nov(12, 0)).manual, false);
+});
+
+test('Автоматичний режим: пізній підйом — ранок до виходу; вечір; відпочинок після півночі; привітання', () => {
+  const s = fresh();
+  const t = L.currentTpl(s);
+  t.arrival = '12:00'; t.transport = 'car'; t.travel.car = 190; t.buffer = 10; // підйом 07:45, вихід 08:40
+  const p = L.autoPlan(s, nov(6, 34));
+  eq([p.id, L.fmtHM(p.until), p.by], ['morning', '08:40', 'dep'], 'о 06:34 — ранок, а не день');
+  eq([L.autoMode(s, nov(4, 30)), L.autoMode(s, nov(5, 0)), L.autoMode(s, nov(8, 39)), L.autoMode(s, nov(8, 41))], ['rest', 'morning', 'morning', 'day']);
+  eq([L.greetingFor('morning', 6 * 60 + 34), L.greetingFor('day', 17 * 60 + 30), L.greetingFor('ready', 19 * 60)], ['Доброго ранку', 'Доброго дня', 'Доброго вечора']);
+  s.session = { ...session(7, 45), finishedAt: nov(8, 20) };
+  eq(L.autoMode(s, nov(8, 25)), 'day', 'підготовку завершено — далі день');
+  s.session = session(7, 45);
+  eq(L.autoMode(s, nov(9, 30)), 'morning', 'підготовка триває навіть після часу виходу');
+  const n = fresh();
+  n.settings.eveningAt = '19:00'; n.settings.restAt = '00:30';
+  eq([L.autoMode(n, nov(18, 30)), L.autoMode(n, nov(23, 50)), L.autoMode(n, nov(0, 10)), L.autoMode(n, nov(0, 40))], ['day', 'evening', 'evening', 'rest'], 'відпочинок після півночі');
+  eq(L.autoPlan(n, nov(0, 10)).until, nov(0, 30) / 60000 + 120, 'вечір до 00:30');
+  const old = L.cleanState({ settings: { restAt: '21:00' } }, nov(10, 0)).state.settings;
+  eq([old.eveningAt, old.restAt], ['18:00', '22:00'], 'старе типове «Вечір з 21:00» → нові типові');
+  ok(!L.nextAction(fresh(), nov(19, 0)).list.some((c) => c.kind === 'morning'), 'увечері ранок не нав’язується');
 });
 
 test('Наступна дія: ранкова підготовка має перевагу, крок — найвищу', () => {
@@ -652,7 +674,7 @@ test('Міграція v2 → v3: категорії справ, типовий 
   eq(state.tasks.map((t) => t.cat), ['work', 'study', 'home', 'health']);
   const w = L.currentTpl(state);
   eq([w.arrival, w.transport, w.travel.walk, w.buffer, w.steps.length, w.steps.some((s) => s.title === 'Документи, телефон, заряд')], ['08:00', 'walk', 20, 20, 6, false], 'незмінений типовий ранок оновлено, маршрут збережено');
-  eq([state.settings.theme, state.settings.name, state.settings.restAt, state.settings.onboarded], ['light', 'Ігоре', '22:00', true]);
+  eq([state.settings.theme, state.settings.name, state.settings.eveningAt, state.settings.restAt, state.settings.onboarded], ['light', 'Ігоре', '22:00', '23:00', true], '«Вечір з 22:00» лишається вечором, відпочинок — за годину');
   eq([state.gear.cats.med.period, state.gear.history[0].marks.i1, state.gear.history[0].type], [3, 'broken', 'plan']);
   const busy = L.cleanState({ ...v2, session: { date: '2026-11-03', startedAt: 5, done: { s0: 6 } } }, nov(10, 0)).state;
   eq([L.currentTpl(busy).steps.length, busy.session.tpl, busy.session.done], [7, 'tpl-work', { s0: 6 }], 'під час ранку кроки не чіпаємо');

@@ -44,7 +44,8 @@ function settingsHtml(app) {
   <h3 class="sub-h">Особисте</h3>
   <div class="list">
     <label class="row field-row"><span class="row-main"><span class="row-title">Звертання</span><span class="row-meta">У привітанні, у кличному відмінку</span></span><input class="input-plain" style="text-align:right;max-width:45%" id="nameInput" value="${esc(s.name)}" maxlength="40" placeholder="Імʼя" data-change="setName" aria-label="Як до вас звертатися"></label>
-    <label class="row field-row"><span class="row-main"><span class="row-title">Вечір з</span><span class="row-meta">Режим «Відпочинок» і вечірній підсумок</span></span><input class="time-input" type="time" value="${esc(s.restAt)}" data-change="setRestAt" aria-label="Час початку вечора"></label>
+    <label class="row field-row"><span class="row-main"><span class="row-title">Вечір з</span><span class="row-meta">Режим «Вечір»: підсумок дня і план на завтра</span></span><input class="time-input" type="time" value="${esc(s.eveningAt)}" data-change="setEveningAt" aria-label="Час початку вечора"></label>
+    <label class="row field-row"><span class="row-main"><span class="row-title">Відпочинок з</span><span class="row-meta">До ранку — лише найважливіше</span></span><input class="time-input" type="time" value="${esc(s.restAt)}" data-change="setRestAt" aria-label="Час початку відпочинку"></label>
     <label class="row field-row"><span class="row-main"><span class="row-title">Тактильний відгук</span><span class="row-meta">Лише там, де його підтримує платформа. Звуків немає</span></span><input type="checkbox" class="switch" data-change="setHaptic"${s.haptics ? ' checked' : ''}></label>
   </div>
 
@@ -153,10 +154,15 @@ const actions = {
     app.commit((s) => { s.settings.name = el.value.trim().slice(0, 40); }, { render: false });
     toast('Збережено', null, 1600, 'check');
   },
+  // Значення видно в самому полі; повідомлення на кожен оберт колеса вибору лише заважало б.
+  setEveningAt(app, el) {
+    const v = L.parseHM(el.value);
+    if (v == null) return;
+    app.commit((s) => { s.settings.eveningAt = L.fmtHM(v); }, { render: false });
+  },
   setRestAt(app, el) {
     const v = L.parseHM(el.value);
     if (v == null) return;
-    // Значення видно в самому полі; повідомлення на кожен оберт колеса вибору лише заважало б.
     app.commit((s) => { s.settings.restAt = L.fmtHM(v); }, { render: false });
   },
   setHaptic(app, el) {
