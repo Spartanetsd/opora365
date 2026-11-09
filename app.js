@@ -17,7 +17,7 @@ import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.2.1';
+const VERSION = '3.3.0';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools, stats, ideas };
 const TABS = [
@@ -29,6 +29,8 @@ const TABS = [
 // Вкладені сторінки: до якої вкладки належать і куди веде «Назад».
 const PARENT = { morning: 'home', tasks: 'home', ideas: 'home', tools: 'deck' };
 const PARENT_NAME = { home: 'Сьогодні', gear: 'Готовність', deck: 'Швидка дія', stats: 'Статистика' };
+// Розділи зі своїм кольором (styles.css: :root[data-sec]); «Сьогодні» й «Мій ранок» — у кольорі пори доби.
+const SECTIONS = new Set(['tasks', 'ideas', 'gear', 'deck', 'tools', 'stats']);
 
 const app = {
   version: VERSION,
@@ -86,6 +88,7 @@ const app = {
     view.innerHTML = html;
     view.classList.toggle('enter', enter && !reduceMotion());
     if (keepId) document.getElementById(keepId)?.focus({ preventScroll: true });
+    document.documentElement.dataset.sec = SECTIONS.has(this.route.tab) ? this.route.tab : '';
     setBackdrop(mod.backdrop ? mod.backdrop(this) : null);
     fitBackdrop();
     renderChrome();

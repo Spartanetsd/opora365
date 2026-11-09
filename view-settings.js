@@ -21,16 +21,16 @@ export function openMenu(app) {
   </button>`;
   openSheet(`${sheetHead('Меню')}
     <div class="list menu-list">
-      ${row('menuGo', 'sunrise', 'Мій ранок', `${tpl.name}, підйом о ${L.fmtHM(L.computePlan(tpl).wake)}`, ' data-tab="morning"')}
-      ${row('menuGo', 'list', 'Усі справи', `Пошук, без дати, архів. У роботі: ${tv.openCount + tv.upcoming.length + tv.nodate.length}`, ' data-tab="tasks"')}
-      ${row('menuGo', 'spark', 'Задуми', ideasMeta, ' data-tab="ideas"')}
-      ${row('menuEvening', 'moon', 'Вечірній підсумок', 'Зроблене, перенесення, головне на завтра')}
-      ${row('menuGo', 'apps', 'Інструменти', `Сайти й застосунки: ${app.state.tools.length}`, ' data-tab="tools"')}
+      ${row('menuGo', 'sunrise', 'Мій ранок', `${tpl.name}, підйом о ${L.fmtHM(L.computePlan(tpl).wake)}`, ' data-tab="morning" data-tone="amber"')}
+      ${row('menuGo', 'list', 'Усі справи', `Пошук, без дати, архів. У роботі: ${tv.openCount + tv.upcoming.length + tv.nodate.length}`, ' data-tab="tasks" data-tone="teal"')}
+      ${row('menuGo', 'spark', 'Задуми', ideasMeta, ' data-tab="ideas" data-tone="magenta"')}
+      ${row('menuEvening', 'moon', 'Вечірній підсумок', 'Зроблене, перенесення, головне на завтра', ' data-tone="violet"')}
+      ${row('menuGo', 'apps', 'Інструменти', `Сайти й застосунки: ${app.state.tools.length}`, ' data-tab="tools" data-tone="ice"')}
     </div>
     <div class="list menu-list">
       ${row('openMode', L.MODE[mi.id].icon, 'Режим дня', `${L.MODE[mi.id].name}${mi.manual ? ', вручну' : ', автоматично'}`)}
-      ${row('openSettings', 'gear', 'Налаштування', `Тема: ${theme}. Імʼя, вечір, відгук`)}
-      ${row('openBackup', 'share', 'Резервні копії', app.state.settings.lastBackupAt ? `Остання: ${L.whenText(app.state.settings.lastBackupAt, app.today)}` : 'Копій ще не було')}
+      ${row('openSettings', 'gear', 'Налаштування', `Тема: ${theme}. Імʼя, вечір, відгук`, ' data-tone="slate"')}
+      ${row('openBackup', 'share', 'Резервні копії', app.state.settings.lastBackupAt ? `Остання: ${L.whenText(app.state.settings.lastBackupAt, app.today)}` : 'Копій ще не було', ' data-tone="slate"')}
     </div>
     <p class="foot center">ОПОРА 365, версія ${esc(app.version)}. Obsidian Clarity</p>`, { label: 'Меню' });
 }

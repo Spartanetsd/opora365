@@ -218,7 +218,7 @@ function chrome(app) {
 }
 
 // Ілюстрація — уся, праворуч, під панеллю навігації: колесо не ховається під «островом» і кнопками.
-const backdrop = (app) => (app.route.sub ? null : { src: 'readiness-visual.webp', kind: 'stage', art: 'whole', ar: '1199 / 1312', ah: '86%', pos: '50% 50%', h: '292px' });
+const backdrop = (app) => (app.route.sub ? null : { src: 'readiness-visual.webp', kind: 'stage', art: 'whole', ar: '1 / 1', ah: '86%', pos: '50% 50%', h: '292px' });
 
 /* ---------- Екран перевірки ---------- */
 

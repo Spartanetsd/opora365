@@ -67,6 +67,6 @@ function render(app) {
   </div>`;
 }
 
-const backdrop = () => ({ src: 'abstract-04.webp', kind: 'band', pos: 'center 55%' });
+const backdrop = () => ({ src: 'abstract-04.webp', kind: 'band', pos: 'center 35%' });
 
 export default { title: 'Статистика', render, backdrop, actions: {} };
