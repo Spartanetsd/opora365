@@ -1,6 +1,7 @@
 // ОПОРА 365 — «Вечірній підсумок»: за 30–60 секунд. Що виконано, що залишилося, що перенести,
 // що найважливіше завтра. Без оцінок продуктивності й нав’язливих повідомлень.
 import * as L from './logic.js';
+import * as I from './logic-ideas.js';
 import { $, esc, icon, toast, haptic, openScreen, updateScreen, closeScreen, closeSheet } from './ui.js';
 import { addTask, chooseDay } from './view-tasks.js';
 
@@ -48,6 +49,9 @@ function eveningHtml(app) {
   }
 
   const done = [...ed.doneTasks.map((t) => t.title), ...ed.doneMusts.map((m) => m.title)];
+  // Крок до задуму — теж зроблене за день.
+  const fx = I.ideaView(s.ideas).focus;
+  if (s.ideas.log[ed.day]) done.push(fx ? `Крок до задуму: ${fx.title}` : 'Крок до задуму');
   const doneBlock = `<section class="ev-card" aria-labelledby="evDoneH">
     <h2 class="ev-h" id="evDoneH">${icon('checkCircle')}Що виконано<span class="ev-n">${done.length}</span></h2>
     ${done.length ? `<ul class="ev-done">${done.slice(0, 5).map((t) => `<li>${esc(t)}</li>`).join('')}${done.length > 5 ? `<li class="ev-more">і ще ${done.length - 5}</li>` : ''}</ul>` : '<p class="ev-note">Позначених справ сьогодні немає.</p>'}
@@ -75,9 +79,20 @@ function eveningHtml(app) {
 
   return `<div class="scr evening-scr">${head}
     <div class="ev-head"><h1 class="ev-title">${dayTitle}</h1><p class="ev-sub">Хвилина на підсумок — і можна відпочивати. Завтра ${end} о ${L.fmtHM(p.departure)}.</p></div>
-    ${doneBlock}${remBlock}${tomBlock}
+    ${doneBlock}${remBlock}${tomBlock}${ideaBlock(s, ed)}
     <div class="scr-foot"><button type="button" class="btn btn-primary btn-xl btn-block" data-act="evClose">${icon('moon')}Завершити день</button></div>
   </div>`;
+}
+
+// Ідея дня: що спало на думку для творчості чи заробітку — одним рядком у скриньку «Задумів».
+function ideaBlock(s, ed) {
+  const today = s.ideas.list.filter((x) => L.todayKey(x.createdAt) === ed.day);
+  return `<section class="ev-card" aria-labelledby="evIdeaH">
+    <h2 class="ev-h" id="evIdeaH">${icon('bulb')}Ідея дня${today.length ? `<span class="ev-n">${today.length}</span>` : ''}</h2>
+    <p class="ev-note">Що сьогодні спало на думку — для творчості чи заробітку? Одним рядком у «Задуми».</p>
+    ${today.length ? `<ul class="ev-done">${today.slice(0, 3).map((x) => `<li>${esc(x.title)}</li>`).join('')}</ul>` : ''}
+    <form class="quick ev-add" data-submit="evIdea" autocomplete="off"><span class="quick-ic" aria-hidden="true">${icon('bulb')}</span><input class="quick-input" name="title" maxlength="200" placeholder="Ідея одним рядком" enterkeyhint="done" aria-label="Ідея дня"></form>
+  </section>`;
 }
 
 function refresh(app) {
@@ -149,6 +164,16 @@ const actions = {
     const id = el.dataset.id;
     app.commit((s) => { s.pin = s.pin.id === id && s.pin.date === ed.tomorrow ? { id: '', date: '' } : { id, date: ed.tomorrow }; }, { render: false });
     refresh(app);
+  },
+  evIdea(app, form) {
+    const title = form.elements.title.value.trim();
+    if (!title) return;
+    let x = null;
+    app.commit((st) => { x = I.addIdea(st.ideas, title, 'create', Date.now()); }, { render: false });
+    if (!x) return;
+    haptic();
+    refresh(app);
+    toast(app.state.ideas.focus === x.id ? 'Записано — це ваш головний задум' : 'Записано в «Задуми»', null, 2000, 'bulb');
   },
   evAdd(app, form) {
     const title = form.elements.title.value.trim();

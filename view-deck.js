@@ -3,7 +3,7 @@
 // і без збирання оперативних відомостей.
 import * as L from './logic.js';
 import * as D from './logic-deck.js';
-import { $, esc, icon, seg, openSheet, closeSheet, confirmSheet, choiceSheet, toast, sheetHead, haptic, openScreen, updateScreen, closeScreen, setScreenBg } from './ui.js';
+import { $, esc, icon, seg, openSheet, closeSheet, confirmSheet, choiceSheet, toast, sheetHead, haptic, openScreen, updateScreen, closeScreen, setScreenBg, sortable, growSteps } from './ui.js';
 import { quickTile, checklistItem, miniRing, emptyState, animateRings, photoHead } from './components.js';
 import { addTask } from './view-tasks.js';
 
@@ -192,8 +192,10 @@ function openAssign(app, from) {
 /* ---------- Редактор сценарію ---------- */
 
 function stepRowEd(s) {
+  // Ручка ліворуч — подалі від «×», щоб, тягнучи, не видалити крок випадково.
   return `<div class="row sc-step" data-id="${esc(s.id || '')}">
-    <input class="input-plain" value="${esc(s.t)}" placeholder="Крок" maxlength="120" aria-label="Текст кроку">
+    <button type="button" class="drag" aria-label="Перемістити крок: натисніть і тягніть, або стрілки вгору й вниз">${icon('grip')}</button>
+    <textarea class="input-plain step-t" rows="1" placeholder="Крок" maxlength="120" enterkeyhint="next" aria-label="Текст кроку">${esc(s.t)}</textarea>
     <button type="button" class="icon-btn${s.req ? ' on' : ''}" aria-pressed="${!!s.req}" data-act="scReq" aria-label="Обовʼязковий крок">${icon('shield')}</button>
     <button type="button" class="icon-btn" data-act="scDel" aria-label="Видалити крок">${icon('x')}</button>
   </div>`;
@@ -206,6 +208,7 @@ function openEditor(app, sc) {
     ${sheetHead(isNew ? 'Новий сценарій' : 'Сценарій', { cancel: 'Скасувати', done: 'Зберегти', submit: true })}
     <div class="list"><label class="row field"><input class="input-plain" name="title" value="${esc(s.title)}" placeholder="Назва сценарію" maxlength="60" aria-label="Назва сценарію"${isNew ? ' data-focus' : ''}></label></div>
     <h3 class="sub-h">Кроки, ${icon('shield', 'crit')} — обовʼязкові</h3>
+    <p class="hint sc-hint">Порядок — перетягніть за&nbsp;<span class="nw">${icon('grip')} ліворуч.</span></p>
     <div class="list sc-steps">${s.steps.map(stepRowEd).join('')}</div>
     <button type="button" class="row row-add" style="margin-top:6px" data-act="scAdd">${icon('plus')}<span>Додати крок</span></button>
     <p class="hint">Сценарій завершиться як «Готово», лише коли підтверджено всі обовʼязкові кроки.</p>
@@ -214,6 +217,8 @@ function openEditor(app, sc) {
       ${!isNew && s.kind === 'custom' ? `<button type="button" class="btn btn-danger-plain btn-block" data-act="scDelete" data-id="${esc(s.id)}">${icon('trash')}Видалити сценарій</button>` : ''}
     </div>
   </form>`, { label: 'Сценарій' });
+  sortable($('#sheet .sc-steps'), { item: '.sc-step', handle: '.drag' });
+  growSteps($('#sheet'));
   if (isNew) $('#sheet [data-act="scAdd"]')?.click();
 }
 
@@ -309,7 +314,7 @@ const actions = {
   scAdd(app, el) {
     const list = el.closest('form').querySelector('.sc-steps');
     list.insertAdjacentHTML('beforeend', stepRowEd({ id: '', t: '', req: false }));
-    list.lastElementChild.querySelector('input').focus();
+    list.lastElementChild.querySelector('.step-t').focus();
   },
   scReq(app, el) {
     const on = el.getAttribute('aria-pressed') !== 'true';
@@ -322,7 +327,7 @@ const actions = {
     if (!title) { form.elements.title.focus(); return; }
     const steps = [...form.querySelectorAll('.sc-step')].map((row) => ({
       id: row.dataset.id || L.uid(),
-      t: row.querySelector('input').value.trim().slice(0, 120),
+      t: row.querySelector('.step-t').value.replace(/\s+/g, ' ').trim().slice(0, 120),
       req: row.querySelector('[data-act="scReq"]').getAttribute('aria-pressed') === 'true',
     })).filter((s) => s.t).slice(0, 40);
     const id = form.dataset.id;

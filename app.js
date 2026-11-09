@@ -12,13 +12,14 @@ import gear from './view-gear.js';
 import deck from './view-deck.js';
 import tools from './view-tools.js';
 import stats from './view-stats.js';
+import ideas from './view-ideas.js';
 import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.1.0';
+const VERSION = '3.2.0';
 
-const VIEWS = { home, morning, tasks, gear, deck, tools, stats };
+const VIEWS = { home, morning, tasks, gear, deck, tools, stats, ideas };
 const TABS = [
   { id: 'home', name: 'Сьогодні', icon: 'sun' },
   { id: 'gear', name: 'Готовність', icon: 'shieldCheck' },
@@ -26,7 +27,7 @@ const TABS = [
   { id: 'stats', name: 'Статистика', icon: 'chart' },
 ];
 // Вкладені сторінки: до якої вкладки належать і куди веде «Назад».
-const PARENT = { morning: 'home', tasks: 'home', tools: 'deck' };
+const PARENT = { morning: 'home', tasks: 'home', ideas: 'home', tools: 'deck' };
 const PARENT_NAME = { home: 'Сьогодні', gear: 'Готовність', deck: 'Швидка дія', stats: 'Статистика' };
 
 const app = {
@@ -114,6 +115,7 @@ const ACTIONS = {
   ...deck.actions,
   ...tools.actions,
   ...stats.actions,
+  ...ideas.actions,
   ...evening.actions,
   ...settings.actions,
   ...welcome.actions,
@@ -500,6 +502,11 @@ async function boot() {
   matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => { applyTheme(); app.render(); });
   buildChrome();
   initDialogs();
+  // Рамка фокусу — лише для клавіатури: Tab і стрілки вмикають її, дотик вимикає.
+  addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' || (e.key.startsWith('Arrow') && !e.target.closest?.('input, textarea, select'))) document.documentElement.classList.add('kbd');
+  }, true);
+  addEventListener('pointerdown', () => document.documentElement.classList.remove('kbd'), true);
   trackKeyboard();
   app.route = parseHash();
   history.replaceState('root', '', `#${app.route.tab}${app.route.sub ? `/${app.route.sub}` : ''}`);

@@ -1,7 +1,7 @@
 // ОПОРА 365 — Service Worker: кешує лише файли застосунку, щоб він відкривався без інтернету.
 // Особисті дані сюди не потрапляють: вони живуть в IndexedDB/localStorage на пристрої.
 // Після зміни будь-якого файлу збільште VERSION — застосунок запропонує оновитися.
-const VERSION = 'opora-3.1.0';
+const VERSION = 'opora-3.2.0';
 
 const FILES = [
   './',
@@ -13,6 +13,7 @@ const FILES = [
   './logic.js',
   './logic-gear.js',
   './logic-deck.js',
+  './logic-ideas.js',
   './store.js',
   './icons.js',
   './ui.js',
@@ -24,6 +25,7 @@ const FILES = [
   './view-deck.js',
   './view-tools.js',
   './view-stats.js',
+  './view-ideas.js',
   './view-evening.js',
   './view-settings.js',
   './view-welcome.js',

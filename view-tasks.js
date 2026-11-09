@@ -1,6 +1,7 @@
 // ОПОРА 365 — «Справи»: Priority Flow. Пошук, категорії, справи без дати, дедлайни, повторення,
 // кроки, перенесення, архів; «Не забути» з явним рішенням; режим «Фокус» з таймером.
 import * as L from './logic.js';
+import * as I from './logic-ideas.js';
 import { $, esc, icon, seg, openSheet, closeSheet, toast, sheetHead, haptic, openScreen, updateScreen, closeScreen, screenOpen, choiceSheet, confirmSheet } from './ui.js';
 import { taskRow, mustRow, emptyState, miniRing, animateRings, photoHead } from './components.js';
 
@@ -97,7 +98,7 @@ function bodyMusts(app) {
   const add = `<button type="button" class="row row-add" data-act="openAdd" data-type="must">${icon('plus')}<span>Додати до «Не забути»</span></button>`;
   return `<section class="section" aria-labelledby="maH">
       <div class="sec-row"><h2 class="sec-h" id="maH">На виду<span class="sec-count">${active.length}</span></h2></div>
-      <div class="list">${active.map((m) => mustRow(m, app.today, { flash: app.ui.flash })).join('')}${add}</div>
+      <div class="list">${active.map((m) => mustRow(m, app.today, { flash: app.ui.flash, deferTo: L.deferredUntil(app.state, `must:${m.id}`) })).join('')}${add}</div>
     </section>
     ${parked.length ? `<section class="section" aria-labelledby="msH">
       <div class="sec-row"><h2 class="sec-h" id="msH">Перенесені<span class="sec-count">${parked.length}</span></h2></div>
@@ -248,8 +249,12 @@ function taskFields(t, today, isNew) {
     <textarea class="textarea" name="note" rows="2" maxlength="2000" placeholder="Необовʼязково">${esc(t.note)}</textarea>`;
 }
 
+const TYPE_TITLE = { task: 'Нова справа', must: 'Не забути', idea: 'Ідея' };
+const TYPE_HINT = { task: 'Що потрібно зробити?', must: 'Що не можна забути?', idea: 'Ідея одним рядком — творча чи фінансова' };
+const TYPE_LABEL = { task: 'Назва справи', must: 'Що не можна забути', idea: 'Ідея' };
+
 function openAdd(app, el) {
-  const type = el?.dataset?.type === 'must' ? 'must' : 'task';
+  const type = el?.dataset?.type === 'must' ? 'must' : el?.dataset?.type === 'idea' ? 'idea' : 'task';
   const today = app.today;
   // З поради «Статистики» форма може відкритися вже з категорією й датою («Сімʼя», завтра).
   const cat = L.TCAT[el?.dataset?.cat] ? el.dataset.cat : '';
@@ -257,9 +262,9 @@ function openAdd(app, el) {
   const blank = { pr: 2, due, time: '', deadline: '', cat, note: '', sub: [], rep: null };
   openSheet(`
   <form class="sheet-form" data-submit="addFromSheet" data-type="${type}" data-rep="" data-nodate="false" autocomplete="off">
-    ${sheetHead(type === 'must' ? 'Не забути' : 'Нова справа', { cancel: 'Скасувати', done: 'Додати', submit: true })}
-    <div class="list"><label class="row field"><input class="input-plain" name="title" placeholder="${type === 'must' ? 'Що не можна забути?' : 'Що потрібно зробити?'}" maxlength="300" enterkeyhint="done" aria-label="Назва справи" data-focus></label></div>
-    <div style="margin-top:12px">${seg('Тип', [{ id: 'task', name: 'Справа' }, { id: 'must', name: 'Не забути' }], type, 'formSeg', 'type')}</div>
+    ${sheetHead(TYPE_TITLE[type], { cancel: 'Скасувати', done: 'Додати', submit: true })}
+    <div class="list"><label class="row field"><input class="input-plain" name="title" placeholder="${TYPE_HINT[type]}" maxlength="300" enterkeyhint="done" aria-label="${TYPE_LABEL[type]}" data-focus></label></div>
+    <div style="margin-top:12px">${seg('Тип', [{ id: 'task', name: 'Справа' }, { id: 'must', name: 'Не забути' }, { id: 'idea', name: 'Ідея' }], type, 'formSeg', 'type')}</div>
     <input type="hidden" name="type" value="${type}">
     <div class="only-task">${taskFields(blank, today, true)}</div>
     <div class="only-must">
@@ -268,6 +273,13 @@ function openAdd(app, el) {
       <input class="date-input wide" type="date" name="mdeadline" aria-label="Строк виконання">
       <h3 class="sub-h">Нотатка</h3>
       <textarea class="textarea" name="mnote" rows="2" maxlength="2000" placeholder="Необовʼязково"></textarea>
+    </div>
+    <div class="only-idea">
+      <p class="hint" style="margin-top:12px">Ідея піде в скриньку «Задумів». Перша стане головним задумом — щодня по маленькому кроку.</p>
+      <div style="margin-top:12px">${seg('Яка ідея', Object.values(I.IDEA_KINDS).map((k) => ({ id: k.id, name: k.name, icon: k.icon })), 'create', 'formSeg', 'ikind')}</div>
+      <input type="hidden" name="ikind" value="create">
+      <h3 class="sub-h">Нотатка</h3>
+      <textarea class="textarea" name="inote" rows="2" maxlength="2000" placeholder="Для кого це й якою буде перша версія?"></textarea>
     </div>
   </form>`, { label: 'Нова справа' });
 }
@@ -301,6 +313,14 @@ function addFromSheet(app, form) {
   const f = form.elements;
   const title = f.title.value.trim();
   if (!title) { f.title.focus(); return; }
+  if (f.type.value === 'idea') {
+    let x = null;
+    app.commit((s) => { x = I.addIdea(s.ideas, title, f.ikind.value, Date.now(), f.inote.value.trim().slice(0, 2000)); });
+    if (!x) { toast('Скринька ідей повна'); return; }
+    closeSheet();
+    toast(app.state.ideas.focus === x.id ? 'Записано — це ваш головний задум' : 'Ідею записано в «Задуми»', { label: 'Відкрити', run: () => app.go('ideas') });
+    return;
+  }
   if (f.type.value === 'must') {
     const m = addMust(app, title, L.isKey(f.mdeadline.value) ? f.mdeadline.value : '', f.mnote.value.trim().slice(0, 2000));
     if (!m) return;
@@ -347,8 +367,11 @@ function saveTask(app, form) {
   if (!title) { f.title.focus(); return; }
   if (L.findDuplicate(app.state.tasks, title, t.id)) { toast('Справа з такою назвою вже є'); return; }
   const data = readTaskForm(form);
+  // Час змінили вручну — це новий план, позначка «відкладено» знімається.
+  const replanned = data.time !== t.time || data.due !== t.due;
   app.commit((s) => {
     Object.assign(t, data, { title: title.slice(0, 300), sub: parseSub(f.sub.value, t.sub) });
+    if (replanned) { t.delays = 0; t.planTime = ''; }
     if (f.pin) {
       if (f.pin.checked) s.pin = { id: t.id, date: app.today };
       else if (s.pin.id === t.id && s.pin.date === app.today) s.pin = { id: '', date: '' };
@@ -643,10 +666,9 @@ const actions = {
     }
     // Нове: заголовок і підказка поля відповідають тому, що саме додаєте.
     if (form?.dataset.submit === 'addFromSheet' && field === 'type') {
-      const must = el.dataset.v === 'must';
       const t = form.closest('dialog')?.querySelector('.sheet-title');
-      if (t) t.textContent = must ? 'Не забути' : 'Нова справа';
-      if (form.elements.title) form.elements.title.placeholder = must ? 'Що не можна забути?' : 'Що потрібно зробити?';
+      if (t) t.textContent = TYPE_TITLE[el.dataset.v] || 'Нова справа';
+      if (form.elements.title) { form.elements.title.placeholder = TYPE_HINT[el.dataset.v] || ''; form.elements.title.setAttribute('aria-label', TYPE_LABEL[el.dataset.v] || 'Назва'); }
     }
   },
   catPick(app, el) {

@@ -9,6 +9,8 @@ import { openCheckFlow, resumeCheck } from './view-gear.js';
 import { openRunScreen } from './view-deck.js';
 import { openSettings } from './view-settings.js';
 import { openEvening } from './view-evening.js';
+import { openIdeaFocus } from './view-ideas.js';
+import * as I from './logic-ideas.js';
 
 function ritualTiles(app, nowMs) {
   const s = app.state;
@@ -38,7 +40,27 @@ function ritualTiles(app, nowMs) {
       <span class="ritual-t">Вечірній підсумок</span>
       <span class="ritual-s">${esc(eSub)}</span>
     </button>
+    ${ideaTile(s, nowMs)}
   </div>`;
+}
+
+// «Задуми» поруч із ранком і вечором: творче й фінансове — теж щоденний ритуал, а не «колись».
+function ideaTile(s, nowMs) {
+  const iv = I.ideaView(s.ideas);
+  const x = iv.focus;
+  let sub;
+  if (x) {
+    const st = I.nextStep(x);
+    const state = I.stepToday(s.ideas, nowMs) ? 'сьогодні крок зроблено' : st ? `крок: ${st.t}` : 'запишіть перший маленький крок';
+    sub = `${x.title} — ${state}`;
+  } else sub = iv.inbox.length ? `Ідей у скриньці: ${iv.inbox.length}. Оберіть одну в роботу` : 'Творчі й фінансові ідеї — щодня по кроку';
+  const ic = x ? I.IDEA_KINDS[x.kind].icon : 'spark';
+  return `<button type="button" class="ritual ritual-wide" data-act="tab" data-tab="ideas">
+      <img class="ritual-bg" src="abstract-02.webp" alt="" loading="lazy" decoding="async"><span class="ritual-shade" aria-hidden="true"></span>
+      <span class="ritual-ic" aria-hidden="true">${icon(ic)}</span>
+      <span class="ritual-t">Задуми</span>
+      <span class="ritual-s">${esc(sub)}</span>
+    </button>`;
 }
 
 function quickAdd(app) {
@@ -93,7 +115,7 @@ function render(app) {
     ${musts.length ? `<section class="section" aria-labelledby="mustH">
       <div class="sec-row"><h2 class="sec-h" id="mustH">${icon('pin', 'sec-ic')}Не забути<span class="sec-count">${mv.active.length}</span></h2><button type="button" class="link" data-act="openAdd" data-type="must">Додати</button></div>
       <p class="sec-note">Залишаються на виду, доки ви не вирішите: виконати, перенести чи скасувати.</p>
-      <div class="list">${(app.ui.showMoreMusts ? musts : musts.slice(0, 3)).map((m) => mustRow(m, today, { flash, nowMs })).join('')}</div>
+      <div class="list">${(app.ui.showMoreMusts ? musts : musts.slice(0, 3)).map((m) => mustRow(m, today, { flash, nowMs, deferTo: L.deferredUntil(app.state, `must:${m.id}`, nowMs) })).join('')}</div>
       ${musts.length > 3 ? `<button type="button" class="more-btn" data-act="hMoreMusts" aria-expanded="${app.ui.showMoreMusts}">${app.ui.showMoreMusts ? 'Згорнути' : `Ще ${musts.length - 3}`}${icon('down')}</button>` : ''}
     </section>` : ''}`;
   }
@@ -152,6 +174,7 @@ async function naDo(app, el) {
     case 'task': completeTaskAct(app, c.id, el); break;
     case 'must': completeMustAct(app, c.id, el); break;
     case 'evening': openEvening(app, from); break;
+    case 'idea': openIdeaFocus(app, c.id, from); break;
     case 'backup': openSettings(app, 'backup'); break;
     default: break;
   }
@@ -161,23 +184,30 @@ async function naDefer(app, el) {
   const key = el.dataset.key;
   const c = findAction(app, key);
   if (!c) return;
-  const options = [
-    { id: '30', label: 'На 30 хвилин', icon: 'alarmClock' },
-    { id: '60', label: 'На 1 годину', icon: 'alarmClock' },
-    { id: '180', label: 'На 3 години', icon: 'alarmClock' },
-  ];
-  if (c.kind === 'task') options.push({ id: 'postpone', label: 'Перенести на завтра', icon: 'calendarMove', hint: 'Справа отримає завтрашню дату. Дедлайн не зміниться' });
-  else if (c.kind === 'morning') options.splice(0, 3, { id: 'skipMorning', label: 'Сьогодні без ранкової підготовки', icon: 'x', hint: 'Нагадування повернеться завтра' });
+  const now = Date.now();
+  const t = c.kind === 'task' ? app.state.tasks.find((x) => x.id === c.id) : null;
+  // Біля кожного варіанта — до котрої години: рішення видно одразу, без підрахунку в голові.
+  const until = (m) => (t ? L.delayTask(t, m, now)?.time || '' : L.fmtHM(L.minOfDay(L.localMin(now)) + m));
+  const options = [[30, 'На 30 хвилин'], [60, 'На 1 годину'], [180, 'На 3 години']]
+    .filter(([m]) => !t || until(m))
+    .map(([m, label]) => ({ id: String(m), label, icon: 'alarmClock', hint: `до ${until(m)}` }));
+  if (t) options.push({ id: 'postpone', label: 'Перенести на завтра', icon: 'calendarMove', hint: 'Справа отримає завтрашню дату. Дедлайн не зміниться' });
+  else if (c.kind === 'morning') options.splice(0, options.length, { id: 'skipMorning', label: 'Сьогодні без ранкової підготовки', icon: 'x', hint: 'Нагадування повернеться завтра' });
   else options.push({ id: 'tomorrow', label: 'До завтра', icon: 'moon' });
   const v = await choiceSheet({ title: 'Відкласти', text: c.title, options });
   if (!v) return;
-  if (v === 'postpone') {
-    const t = app.state.tasks.find((x) => x.id === c.id);
-    if (!t) return;
+  if (t) {
+    // Справа: новий час і позначка «відкладено» або «перенесено» — їх видно і в переліку справ.
     const before = { ...t };
-    const next = L.postpone(t, app.today);
-    app.commit(() => Object.assign(t, next));
-    toast(`Перенесено: ${L.shortDate(next.due, app.today)}`, { label: 'Скасувати', run: () => app.commit(() => Object.assign(t, before)) });
+    const next = v === 'postpone' ? L.postpone(t, app.today) : L.delayTask(t, +v, Date.now());
+    if (!next) return;
+    app.commit((s) => {
+      Object.assign(t, next);
+      if (v === 'postpone') delete s.later[key];
+      else s.later[key] = L.localAt(t.due, L.parseHM(t.time));
+      if (s.pick.key === key) s.pick = { key: '', date: '' };
+    });
+    toast(v === 'postpone' ? `Перенесено: ${L.shortDate(next.due, app.today)}` : `Відкладено до ${next.time}`, { label: 'Скасувати', run: () => app.commit((s) => { Object.assign(t, before); delete s.later[key]; }) });
     return;
   }
   app.commit((s) => {
@@ -188,7 +218,7 @@ async function naDefer(app, el) {
     } else L.defer(s, key, +v);
     if (s.pick.key === key) s.pick = { key: '', date: '' };
   });
-  toast(v === 'tomorrow' ? 'Відкладено до завтра' : v === 'skipMorning' ? 'Сьогодні без ранкової підготовки' : `Відкладено на ${L.fmtDur(+v)}`, { label: 'Скасувати', run: () => app.commit((s) => { delete s.later[key]; }) });
+  toast(v === 'tomorrow' ? 'Відкладено до завтра' : v === 'skipMorning' ? 'Сьогодні без ранкової підготовки' : `Відкладено до ${until(+v)}`, { label: 'Скасувати', run: () => app.commit((s) => { delete s.later[key]; }) });
 }
 
 // «Обрати іншу»: ви бачите всю чергу й причини; ваш вибір стає першим до виконання або до кінця дня.

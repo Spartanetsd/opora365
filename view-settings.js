@@ -1,5 +1,6 @@
 // ОПОРА 365 — компактне меню, налаштування, резервні копії, оновлення і чесне пояснення обмежень iOS.
 import * as L from './logic.js';
+import * as I from './logic-ideas.js';
 import * as store from './store.js';
 import { $, esc, icon, seg, openSheet, closeSheet, sheetHead, confirmSheet, toast, setHaptics } from './ui.js';
 import { openEvening } from './view-evening.js';
@@ -11,6 +12,8 @@ export function openMenu(app) {
   const tpl = L.currentTpl(app.state);
   const tv = L.taskView(app.state.tasks, app.today);
   const theme = { dark: 'темна', light: 'світла', auto: 'як у системі' }[app.state.settings.theme];
+  const iv = I.ideaView(app.state.ideas);
+  const ideasMeta = iv.focus ? `У роботі: ${iv.focus.title}` : iv.inbox.length ? `У скриньці: ${iv.inbox.length}` : 'Творчі й фінансові ідеї';
   const row = (act, ic, title, meta = '', extra = '') => `<button type="button" class="row row-btn" data-act="${act}"${extra}>
     <span class="row-ic">${icon(ic)}</span>
     <span class="row-main"><span class="row-title">${title}</span>${meta ? `<span class="row-meta">${esc(meta)}</span>` : ''}</span>
@@ -20,6 +23,7 @@ export function openMenu(app) {
     <div class="list menu-list">
       ${row('menuGo', 'sunrise', 'Мій ранок', `${tpl.name}, підйом о ${L.fmtHM(L.computePlan(tpl).wake)}`, ' data-tab="morning"')}
       ${row('menuGo', 'list', 'Усі справи', `Пошук, без дати, архів. У роботі: ${tv.openCount + tv.upcoming.length + tv.nodate.length}`, ' data-tab="tasks"')}
+      ${row('menuGo', 'spark', 'Задуми', ideasMeta, ' data-tab="ideas"')}
       ${row('menuEvening', 'moon', 'Вечірній підсумок', 'Зроблене, перенесення, головне на завтра')}
       ${row('menuGo', 'apps', 'Інструменти', `Сайти й застосунки: ${app.state.tools.length}`, ' data-tab="tools"')}
     </div>
@@ -129,7 +133,7 @@ function describe(r, app) {
   const cur = L.overview(app.state);
   const made = r.exportedAt ? L.whenText(r.exportedAt, app.today) : 'невідомо коли';
   return `<b>Копія справна.</b> Створена ${made}${r.from < L.SCHEMA ? ' попередньою версією (буде перенесена без втрат)' : ''}.<br>
-    У копії: справ ${r.summary.tasks} (зараз ${cur.tasks}), «Не забути» ${r.summary.musts} (зараз ${cur.musts}), предметів ${r.summary.items}, перевірок ${r.summary.checks}, інструментів ${r.summary.tools}, шаблонів ранку ${r.summary.templates}.${r.dropped ? `<br>Пошкоджених записів пропущено: ${r.dropped}.` : ''}`;
+    У копії: справ ${r.summary.tasks} (зараз ${cur.tasks}), «Не забути» ${r.summary.musts} (зараз ${cur.musts}), предметів ${r.summary.items}, перевірок ${r.summary.checks}, інструментів ${r.summary.tools}, шаблонів ранку ${r.summary.templates}, задумів ${r.summary.ideas ?? 0} (зараз ${cur.ideas}).${r.dropped ? `<br>Пошкоджених записів пропущено: ${r.dropped}.` : ''}`;
 }
 
 const actions = {

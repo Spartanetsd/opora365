@@ -9,6 +9,12 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
 
+// Типографіка: число з одиницею («59 хв», «4 з 5») і прийменник із часом («о 13:44») не розриваються між рядками.
+export const typo = (s) => esc(s)
+  .replace(/(\d) з (\d)/g, '$1&nbsp;з&nbsp;$2')
+  .replace(/(\d) (хв|год|с|днів|дні|день|дня|раз|рази|разів|справ|справи|кроків|кроки|крок)(?=[\s,.;:)]|$)/g, '$1&nbsp;$2')
+  .replace(/(^|[\s(])(о|до|з|на|від) (\d{1,2}:\d{2})/g, '$1$2&nbsp;$3');
+
 export const reduceMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ---------- Тактильний відгук ---------- */
@@ -376,6 +382,157 @@ export function initDialogs() {
 }
 
 /* ---------- Дрібні елементи керування ---------- */
+
+/* ---------- Перетягування рядків за ручку ---------- */
+// Натисніть «⋮⋮» і тягніть: рядок іде за пальцем, сусіди розступаються, біля країв список гортається,
+// після відпускання рядок плавно стає на місце. На клавіатурі — стрілки на ручці.
+// Рядок, що тягнеться, — копія поверх списку (останній у списку, тож малюється зверху), оригінал тримає місце до відпускання.
+export function sortable(list, { item, handle = '.drag', onMove = () => {} } = {}) {
+  if (!list || list.dataset.sortable) return;
+  list.dataset.sortable = '1';
+  const rows = () => [...list.children].filter((e) => e.matches(item) && !e.classList.contains('drag-ghost'));
+  const scrollerOf = () => {
+    for (let e = list.parentElement; e; e = e.parentElement) {
+      const o = getComputedStyle(e).overflowY;
+      if ((o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight + 1) return e;
+    }
+    return document.scrollingElement;
+  };
+  let s = null;
+  const place = () => {
+    const { all, from, sc, tops, hs, row } = s;
+    const dyRaw = s.y - s.y0 + (sc.scrollTop - s.sc0);
+    // Не далі країв списку.
+    const top0 = tops[from] - tops[0];
+    const room = tops[all.length - 1] + hs[all.length - 1] - tops[0] - hs[from];
+    const dy = Math.max(-top0, Math.min(room - top0, dyRaw));
+    s.ghost.style.transform = `translateY(${dy}px)`;
+    const center = tops[from] + dy + hs[from] / 2;
+    let to = from;
+    for (let i = 0; i < all.length; i++) {
+      if (i === from) continue;
+      const mid = tops[i] + hs[i] / 2;
+      // «≤» і «≥»: біля самого краю списку (рядок далі не їде) теж можна стати першим чи останнім.
+      if (i < from && center <= mid) to = Math.min(to, i);
+      if (i > from && center >= mid) to = Math.max(to, i);
+    }
+    if (to !== s.to) { s.to = to; haptic(); }
+    const step = hs[from];
+    all.forEach((r, i) => {
+      if (r === row) return;
+      const shift = from < i && i <= to ? -step : to <= i && i < from ? step : 0;
+      r.style.transform = shift ? `translateY(${shift}px)` : '';
+    });
+  };
+  const loop = () => {
+    if (!s) return;
+    // Біля верхнього чи нижнього краю видимої області — гортаємо.
+    const r = s.sc === document.scrollingElement ? { top: 0, bottom: innerHeight } : s.sc.getBoundingClientRect();
+    const vb = window.visualViewport ? visualViewport.offsetTop + visualViewport.height : innerHeight;
+    const top = Math.max(r.top, 0) + 56, bottom = Math.min(r.bottom, vb) - 56;
+    const v = s.y < top ? -Math.min(14, (top - s.y) / 3) : s.y > bottom ? Math.min(14, (s.y - bottom) / 3) : 0;
+    if (v) s.sc.scrollTop += v;
+    place();
+    s.raf = requestAnimationFrame(loop);
+  };
+  const end = (keep) => {
+    if (!s) return;
+    const st = s;
+    s = null;
+    cancelAnimationFrame(st.raf);
+    const { all, from, row, ghost, tops, hs } = st;
+    const to = keep ? st.to : from;
+    // Куди стає рядок: сума висот сусідів, які він минув.
+    let slot = 0;
+    if (to > from) for (let i = from + 1; i <= to; i++) slot += hs[i];
+    else for (let i = to; i < from; i++) slot -= hs[i];
+    const ms = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
+    ghost.style.transition = `transform ${ms}ms var(--ease)`;
+    ghost.style.transform = `translateY(${slot}px)`;
+    const done = () => {
+      if (to !== from) list.insertBefore(row, to > from ? all[to].nextSibling : all[to]);
+      for (const r of all) { r.style.transition = 'none'; r.style.transform = ''; }
+      row.classList.remove('drag-ph');
+      ghost.remove();
+      list.classList.remove('sorting');
+      requestAnimationFrame(() => { for (const r of all) r.style.transition = ''; });
+      if (to !== from) { haptic(); onMove(from, to, row); }
+    };
+    if (ms) setTimeout(done, ms + 20); else done();
+  };
+  list.addEventListener('pointerdown', (e) => {
+    const h = e.target.closest(handle);
+    if (!h || !list.contains(h) || e.button > 0 || s) return;
+    const row = h.closest(item);
+    if (!row || !list.contains(row)) return;
+    e.preventDefault();
+    try { h.setPointerCapture(e.pointerId); } catch { /* немає захоплення — працюємо й так */ }
+    const all = rows();
+    const from = all.indexOf(row);
+    const sc = scrollerOf();
+    const lr = list.getBoundingClientRect();
+    const rects = all.map((r) => r.getBoundingClientRect());
+    const ghost = row.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    ghost.inert = true;
+    ghost.setAttribute('aria-hidden', 'true');
+    Object.assign(ghost.style, { position: 'absolute', left: `${rects[from].left - lr.left - list.clientLeft}px`, top: `${rects[from].top - lr.top - list.clientTop}px`, width: `${rects[from].width}px`, height: `${rects[from].height}px`, margin: '0' });
+    list.append(ghost);
+    row.classList.add('drag-ph');
+    list.classList.add('sorting');
+    s = { h, row, all, from, to: from, sc, ghost, y0: e.clientY, y: e.clientY, sc0: sc.scrollTop, tops: rects.map((r) => r.top + sc.scrollTop), hs: rects.map((r) => r.height), raf: 0 };
+    haptic();
+    loop();
+  });
+  list.addEventListener('pointermove', (e) => { if (s) { s.y = e.clientY; e.preventDefault(); } });
+  list.addEventListener('pointerup', () => end(true));
+  list.addEventListener('pointercancel', () => end(false));
+  list.addEventListener('lostpointercapture', () => end(true));
+  // Клавіатура: стрілки на ручці переставляють рядок на одну позицію.
+  list.addEventListener('keydown', (e) => {
+    const h = e.target.closest(handle);
+    if (!h || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    const row = h.closest(item);
+    const all = rows();
+    const from = all.indexOf(row);
+    const to = from + (e.key === 'ArrowUp' ? -1 : 1);
+    if (to < 0 || to >= all.length) return;
+    e.preventDefault();
+    list.insertBefore(row, to > from ? all[to].nextSibling : all[to]);
+    h.focus();
+    onMove(from, to, row);
+  });
+}
+
+// Текст кроку в редакторах — поле росте разом із текстом, тож довгий крок видно повністю.
+// Enter не переносить рядок, а веде до наступного кроку; на останньому — додає новий.
+export function growStep(el) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
+export function growSteps(root) {
+  root?.querySelectorAll('textarea.step-t').forEach(growStep);
+}
+// Лише в браузері: тести логіки підключають ui.js і в Node, де немає document.
+if (typeof document !== 'undefined') {
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t.matches?.('textarea.step-t')) return;
+    if (t.value.includes('\n')) t.value = t.value.replace(/\s*\n+\s*/g, ' ');
+    growStep(t);
+  });
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (e.key !== 'Enter' || e.isComposing || !t.matches?.('textarea.step-t')) return;
+    e.preventDefault();
+    const row = t.closest('.sc-step');
+    const next = row?.nextElementSibling?.querySelector('textarea.step-t');
+    if (next) { next.focus(); return; }
+    if (!t.value.trim()) { t.blur(); return; }
+    row?.closest('form')?.querySelector('[data-act="scAdd"], [data-act="ideaNewStep"]')?.click();
+  });
+  addEventListener('resize', () => growSteps(document.querySelector('#sheet')));
+}
 
 export function seg(name, options, value, act, field = '') {
   return `<div class="seg" role="radiogroup" aria-label="${esc(name)}"${field ? ` data-field="${field}"` : ''}>${options.map((o) => `

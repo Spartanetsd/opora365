@@ -1,6 +1,6 @@
 // ОПОРА 365 — компоненти дизайн-системи Obsidian Clarity (рядки HTML/SVG).
 // Наступна дія, Пульс дня, рядки справ і «Не забути», статуси готовності, плитки сценаріїв, порожні стани.
-import { esc, icon } from './ui.js';
+import { esc, icon, typo } from './ui.js';
 import * as L from './logic.js';
 import * as G from './logic-gear.js';
 
@@ -45,7 +45,7 @@ export function animateRings(root) {
 
 const PRIMARY = {
   step: 'Готово', ess: 'Перевірити речі', morning: 'Почати ранок', gearRun: 'Продовжити перевірку', deckRun: 'Продовжити',
-  task: 'Виконано', must: 'Виконано', gear: 'Почати перевірку', evening: 'Підбити підсумок', backup: 'Створити копію',
+  task: 'Виконано', must: 'Виконано', gear: 'Почати перевірку', evening: 'Підбити підсумок', backup: 'Створити копію', idea: 'Почати',
 };
 
 export function nbaBlock(na, { more = false } = {}) {
@@ -65,9 +65,9 @@ export function nbaBlock(na, { more = false } = {}) {
   const future = na.at != null && na.at >= L.clockMin(L.localMin());
   const atText = !future ? '' : na.kind === 'step' ? `до ${L.fmtHM(na.at)}` : na.kind === 'task' ? `о ${L.fmtHM(na.at)}` : '';
   return `<div class="nba" data-level="${na.level}" data-kind="${na.kind}">
-    <p class="nba-lead"><span>${na.picked ? 'Ви обрали' : 'Зараз найважливіше'}</span>${atText ? `<span class="nba-at">${atText}</span>` : ''}</p>
+    <p class="nba-lead"><span>${na.picked ? 'Ви обрали' : 'Зараз найважливіше'}</span>${atText ? `<span class="nba-at">${typo(atText)}</span>` : ''}</p>
     <h2 class="nba-title" id="nbaTitle">${esc(na.title)}</h2>
-    <p class="nba-why">${icon(na.level === 'warn' ? 'alert' : 'info')}<span>${esc(na.reason)}</span></p>
+    <p class="nba-why">${icon(na.level === 'warn' ? 'alert' : 'info')}<span>${typo(na.reason)}</span></p>
     <button type="button" class="btn btn-primary btn-xl btn-block nba-go" data-act="naDo" data-key="${esc(na.key)}">${icon(ic)}${primary}</button>
     ${na.defer || more ? `<div class="nba-alt">
       ${na.defer ? `<button type="button" class="btn btn-glass" data-act="naDefer" data-key="${esc(na.key)}">${icon('alarmClock')}Відкласти</button>` : ''}
@@ -130,7 +130,7 @@ export function pulseCard(p) {
 
 export function deadlineBar(info) {
   if (!info) return '';
-  return `<span class="dl" data-level="${info.level}"><span class="dl-track"><span class="dl-fill" style="--f:${info.frac.toFixed(3)}"></span></span><span class="dl-text">${esc(info.text)}</span></span>`;
+  return `<span class="dl" data-level="${info.level}"><span class="dl-track"><span class="dl-fill" style="--f:${info.frac.toFixed(3)}"></span></span><span class="dl-text">${typo(info.text)}</span></span>`;
 }
 
 /* ---------- Рядок справи ---------- */
@@ -146,6 +146,10 @@ export function taskRow(t, today, { flash = '', nowMs = Date.now(), showDue = tr
     meta.push(`<span class="pr" data-tone="${pr.tone}">${pr.short}</span>`);
     if (showDue && t.due > today) meta.push(`<span>${L.shortDate(t.due, today)}${t.time ? ` о ${t.time}` : ''}</span>`);
     if (!t.due) meta.push('<span>без дати</span>');
+    // Відкладене й перенесене видно одразу в переліку, а не лише всередині справи.
+    const times = (n) => (n > 1 ? ` ${L.count(n, ['раз', 'рази', 'разів'])}` : '');
+    if (t.delays && t.due === today) meta.push(`<span class="meta-ic moved">${icon('alarmClock')}відкладено${times(t.delays)}</span>`);
+    if (t.moved) meta.push(`<span class="meta-ic moved">${icon('calendarMove')}перенесено${times(t.moved)}</span>`);
   }
   if (cat) meta.push(`<span class="meta-ic">${icon(cat.icon)}${esc(cat.name)}</span>`);
   if (!done && !cancelled) {
@@ -169,7 +173,7 @@ export function taskRow(t, today, { flash = '', nowMs = Date.now(), showDue = tr
 
 /* ---------- Рядок «Не забути» з явним рішенням ---------- */
 
-export function mustRow(m, today, { flash = '', decide = true, nowMs = Date.now() } = {}) {
+export function mustRow(m, today, { flash = '', decide = true, nowMs = Date.now(), deferTo = 0 } = {}) {
   const done = !!m.doneAt, cancelled = !!m.cancelledAt;
   const open = !done && !cancelled;
   const parked = open && !!m.returnOn && m.returnOn > today;
@@ -180,6 +184,7 @@ export function mustRow(m, today, { flash = '', decide = true, nowMs = Date.now(
   else {
     const age = Math.max(0, L.diffDays(L.todayKey(m.createdAt), today));
     meta.push(age === 0 ? 'додано сьогодні' : `у списку ${L.daysWord(age)}`);
+    if (deferTo) meta.push(`<span class="meta-ic moved">${icon('alarmClock')}відкладено до ${L.fmtHM(deferTo)}</span>`);
   }
   if (m.note) meta.push(esc(m.note.split('\n')[0].slice(0, 60)));
   const info = open && !parked ? L.deadlineInfo(m, nowMs, 'must') : null;

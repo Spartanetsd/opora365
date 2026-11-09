@@ -6,6 +6,7 @@ import {
 } from './time.js';
 import { defaultGear, cleanGear, gearSummary } from './logic-gear.js';
 import { defaultDeck, cleanDeck, defaultTools, cleanTools, runProgress } from './logic-deck.js';
+import { defaultIdeas, cleanIdeas, ideaView, ideaSlot, nextStep, ideaDays, IDEA_KINDS } from './logic-ideas.js';
 
 export * from './time.js';
 
@@ -118,6 +119,7 @@ export function defaultState() {
     focus: null,
     days: {},
     mornings: {},
+    ideas: defaultIdeas(),
   };
 }
 
@@ -302,14 +304,34 @@ export function newTask(title, pr, due, nowMs = Date.now(), extra = {}) {
   const id = uid();
   return {
     id, title: String(title).trim().slice(0, 300), pr, due, time: '', deadline: '', cat: '', note: '', sub: [], rep: null, sid: id, next: '',
-    createdAt: nowMs, doneAt: 0, cancelledAt: 0, moved: 0, ...extra,
+    createdAt: nowMs, doneAt: 0, cancelledAt: 0, moved: 0, delays: 0, planTime: '', ...extra,
   };
 }
 
 // Перенесення: та сама справа на новий день, без копії. Дедлайн не змінюється.
 export function postpone(task, today, to = '') {
   const base = task.due && task.due > today ? task.due : today;
-  return { ...task, due: isKey(to) ? to : addDays(base, 1), moved: (task.moved || 0) + 1 };
+  // Відкладений на сьогодні час не переходить на новий день: повертається запланований.
+  const time = task.delays ? task.planTime || '' : task.time;
+  return { ...task, due: isKey(to) ? to : addDays(base, 1), time, moved: (task.moved || 0) + 1, delays: 0, planTime: '' };
+}
+
+// «Відкласти» на кілька хвилин чи годин: справа отримує новий час сьогодні (кратний 5 хв) і позначку
+// «відкладено» — її видно в переліку, а не лише в головній дії. Прострочена — повертається на сьогодні
+// й рахується перенесеною. За північ не відкладаємо: тоді краще «Перенести на завтра».
+export function delayTask(task, minutes, nowMs = Date.now()) {
+  const now = localMin(nowMs);
+  const today = keyOfLocal(now);
+  const at = Math.ceil((minOfDay(now) + minutes) / 5) * 5;
+  if (at > DAY - 5) return null;
+  const late = !!task.due && task.due < today;
+  return { ...task, due: task.due && task.due > today ? task.due : today, time: fmtHM(at), delays: (task.delays || 0) + 1, planTime: task.delays ? task.planTime || '' : task.time, moved: (task.moved || 0) + (late ? 1 : 0) };
+}
+
+// До котрої хвилини (місцевої) дію відкладено; 0 — не відкладено.
+export function deferredUntil(state, key, nowMs = Date.now()) {
+  const v = state.later[key] || 0;
+  return v > localMin(nowMs) ? v : 0;
 }
 
 const cmpKey = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -415,7 +437,7 @@ export function completeTask(state, id, nowMs = Date.now()) {
       const today = todayKey(nowMs);
       const due = nextDue(t.rep, t.due > today ? t.due : today);
       spawned = newTask(t.title, t.pr, due, nowMs, {
-        time: t.time, cat: t.cat, note: t.note, rep: { ...t.rep }, sid: t.sid,
+        time: t.delays ? t.planTime || '' : t.time, cat: t.cat, note: t.note, rep: { ...t.rep }, sid: t.sid,
         sub: t.sub.map((s) => ({ id: uid(), t: s.t, d: 0 })),
       });
       state.tasks.push(spawned);
@@ -675,7 +697,8 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     else if (dl === 0) parts.push('дедлайн сьогодні');
     else if (dl === 1) parts.push('дедлайн завтра');
     if (overdue) parts.push(diffDays(t.due, today) === 1 ? 'прострочено з учора' : `прострочено з ${shortDate(t.due, today)}`);
-    if (at != null) parts.push(at < now ? `мало бути о ${t.time}` : `о ${t.time}, ${relIn(at - now)}`);
+    if (at != null && t.delays) parts.push(at <= now ? `відкладено на ${t.time}` : `відкладено на ${t.time}, ${relIn(at - now)}`);
+    else if (at != null) parts.push(at < now ? `мало бути о ${t.time}` : `о ${t.time}, ${relIn(at - now)}`);
     const sp = subProgress(t);
     if (sp.total) parts.push(`кроків ${sp.done} з ${sp.total}`);
     out.push({
@@ -705,6 +728,17 @@ export function candidates(state, nowMs = Date.now(), modeId = '') {
     const key = `gear:${c.id}`;
     if (!free(key)) continue;
     out.push({ key, kind: 'gear', cat: c.id, rank: RANKS[s][mode], title: s === 'issues' ? `Усунути проблеми: ${c.name}` : `Перевірити: ${c.name}`, reason: c.st.text, level: s === 'issues' ? 'warn' : 'normal', icon: c.icon, defer: true, fix: s === 'issues' });
+  }
+
+  // Задум: у свій час — крок до головного задуму, якщо сьогодні його ще не було. Не зранку й не замість головного.
+  const iv = ideaView(state.ideas);
+  if (iv.focus && ideaSlot(state.ideas, nowMs).active) {
+    const key = `idea:${iv.focus.id}:${today}`;
+    if (free(key)) {
+      const st = nextStep(iv.focus);
+      const mins = state.ideas.min;
+      out.push({ key, kind: 'idea', id: iv.focus.id, rank: mode === 'evening' ? 34 : mode === 'day' ? 33 : mode === 'rest' ? 46 : 50, title: `Задум: ${iv.focus.title}`, reason: st ? `Крок: ${st.t}. ${mins} хв — і на сьогодні досить` : `Запишіть перший маленький крок — ${mins} хв`, level: 'normal', icon: IDEA_KINDS[iv.focus.kind].icon, defer: true });
+    }
   }
 
   // Вечір: підсумок дня — головна вечірня справа; уночі — тихіше
@@ -895,6 +929,7 @@ export const QUALITY = [
   { id: 'life', name: 'Сімʼя і здоровʼя', how: 'виконані справи з категоріями «Сімʼя» і «Здоровʼя»' },
   { id: 'musts', name: 'Не забули', how: '«Не забути», позначені виконаними' },
   { id: 'checks', name: 'Перевірки', how: 'завершені перевірки спорядження в «Готовності»' },
+  { id: 'ideas', name: 'Крок до задуму', how: 'дні з кроком до задуму або позначкою «попрацював»; від першої записаної ідеї, сьогоднішній — коли крок уже є' },
   { id: 'evening', name: 'Вечір підбито', how: 'дні з вечірнім підсумком; сьогоднішній — коли його підбито' },
 ];
 const QNAME = Object.fromEntries(QUALITY.map((q) => [q.id, q.name]));
@@ -915,13 +950,14 @@ function firstDay(state, nowMs) {
   for (const m of state.musts) take(m.createdAt);
   for (const c of state.gear.history) take(c.finishedAt);
   for (const r of state.deck.runs) take(r.finishedAt);
+  for (const x of state.ideas.list) take(x.createdAt);
   let min = todayKey(ms);
   for (const k of [...Object.keys(state.days), ...Object.keys(state.mornings || {}), state.session?.date || '']) if (k && k < min) min = k;
   return min;
 }
 
 function emptyPeriod(from, to, active) {
-  return { from, to, active, rows: { morning: { n: 0, of: 0 }, tasks: { n: 0, of: 0 }, life: { n: 0 }, musts: { n: 0 }, checks: { n: 0 }, evening: { n: 0, of: 0 } }, late: [], done: 0, total: 0 };
+  return { from, to, active, rows: { morning: { n: 0, of: 0 }, tasks: { n: 0, of: 0 }, life: { n: 0 }, musts: { n: 0 }, checks: { n: 0 }, ideas: { n: 0, of: 0 }, evening: { n: 0, of: 0 } }, late: [], done: 0, total: 0 };
 }
 
 export function lifeStats(state, nowMs = Date.now()) {
@@ -972,8 +1008,9 @@ export function lifeStats(state, nowMs = Date.now()) {
       p.rows.evening.of++;
       if (closed) p.rows.evening.n++;
     }
+    p.rows.ideas = ideaDays(state.ideas, p.from, p.to, today);
     const r = p.rows;
-    p.total = r.morning.of + r.tasks.of + r.musts.n + r.checks.n + r.evening.n;
+    p.total = r.morning.of + r.tasks.of + r.musts.n + r.checks.n + r.ideas.n + r.evening.n;
   }
   return { today, since, cur: P.cur, prev: P.prev, any: P.cur.total + P.prev.total > 0, advice: advise(state, P.cur, P.prev, nowMs) };
 }
@@ -994,6 +1031,12 @@ function advise(state, cur, prev, nowMs) {
   if (t.of >= 5 && t.n / t.of < 0.6) {
     return { id: 'tasks', row: 'tasks', icon: 'checkCircle', fact: `У строк — ${t.n} з ${genOf(t.of, ['справи', 'справ', 'справ'])}.`, act: 'Плануйте на день не більше трьох важливих справ. Сказати «ні» зайвому — теж рішення.', btn: { label: 'Усі справи', act: 'tab', tab: 'tasks' } };
   }
+  // Задум без руху: творче й фінансове — не «колись», а щодня по кроку.
+  const iw = r.ideas;
+  if (state.ideas.list.length && iw.of >= 4 && iw.n <= 1) {
+    const mins = state.ideas.min;
+    return { id: 'ideas', row: 'ideas', icon: 'spark', fact: `Крок до задуму — ${iw.n} з ${genOf(iw.of, ['дня', 'днів', 'днів'])}.`, act: `${state.ideas.at ? `${mins} хвилин завтра о ${state.ideas.at}` : `Виділіть ${mins} хвилин завтра`} — і задум оживе. Великі речі складаються з маленьких кроків.`, btn: { label: 'Задуми', act: 'tab', tab: 'ideas' } };
+  }
   const usesLife = state.tasks.some((x) => LIFE_CATS.includes(x.cat));
   if (usesLife && cur.done >= 3 && r.life.n === 0) {
     return { id: 'life', row: 'life', icon: 'heart', fact: 'За тиждень — жодної справи для сімʼї чи здоровʼя.', act: 'Заплануйте одну на завтра. Навіть пів години мають значення.', btn: { label: 'Запланувати', act: 'openAdd', cat: 'family', due: 'tomorrow' } };
@@ -1012,7 +1055,7 @@ function advise(state, cur, prev, nowMs) {
     return { id: 'thin', row: '', icon: 'info', fact: 'Цього тижня даних ще мало.', act: 'Позначайте зроблене: кроки ранку, справи, вечірній підсумок. Порада стане точною.', btn: null };
   }
   let best = null;
-  for (const id of ['morning', 'tasks', 'evening']) {
+  for (const id of ['morning', 'tasks', 'ideas', 'evening']) {
     const a = r[id], b = prev.rows[id];
     if (a.of < 3 || b.of < 3) continue;
     const d = a.n / a.of - b.n / b.of;
@@ -1258,6 +1301,8 @@ export function cleanState(raw, nowMs = Date.now()) {
       sid: okId(x.sid) ? x.sid : b.id,
       next: okId(x.next) ? x.next : '',
       moved: int(x.moved, 0, 999, 0),
+      delays: int(x.delays, 0, 99, 0),
+      planTime: parseHM(x.planTime) == null ? '' : fmtHM(parseHM(x.planTime)),
     });
   }
   const musts = [];
@@ -1294,6 +1339,7 @@ export function cleanState(raw, nowMs = Date.now()) {
       focus,
       days,
       mornings,
+      ideas: cleanIdeas(raw.ideas, nowMs),
     },
     dropped: counter.dropped,
     from,
@@ -1314,11 +1360,12 @@ export function overview(s) {
     checks: s.gear.history.length,
     scenarios: s.deck.scenarios.length,
     tools: s.tools.length,
+    ideas: s.ideas.list.length,
   };
 }
 
 export function makeBackup(state, nowMs = Date.now()) {
-  return { app: 'opora', kind: 'backup', v: SCHEMA, exportedAt: nowMs, data: { ...state, session: null, focus: null, deck: { ...state.deck, active: null } } };
+  return { app: 'opora', kind: 'backup', v: SCHEMA, exportedAt: nowMs, data: { ...state, session: null, focus: null, deck: { ...state.deck, active: null }, ideas: { ...state.ideas, timer: null } } };
 }
 
 export function readBackup(obj, nowMs = Date.now()) {

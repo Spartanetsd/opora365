@@ -3,6 +3,7 @@
 import * as L from './logic.js';
 import * as G from './logic-gear.js';
 import * as D from './logic-deck.js';
+import * as I from './logic-ideas.js';
 import { esc } from './ui.js';
 
 const cases = [];
@@ -607,6 +608,117 @@ test('Статистика: одна порада — про найслабше 
   for (const d of ['2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24']) delete s.days[d];
   a = L.lifeStats(s, nov(12, 0)).advice;
   eq([a.id, a.fact], ['keep', 'Вечір підбито — 6 з 6, минулого тижня — 2 з 7.']);
+});
+
+/* ---------- «Відкласти» справу на годину ---------- */
+
+test('«Відкласти»: новий час сьогодні, позначка «відкладено», запланований час не губиться', () => {
+  const t = T('Рапорт', 1, '2026-11-03', 1, { time: '11:42' });
+  const a = L.delayTask(t, 60, nov(11, 47));
+  eq([a.id, a.due, a.time, a.delays, a.planTime, a.moved], [t.id, '2026-11-03', '12:50', 1, '11:42', 0], 'час кратний 5 хв');
+  const b = L.delayTask(a, 30, nov(12, 55));
+  eq([b.time, b.delays, b.planTime], ['13:25', 2, '11:42'], 'удруге — запланований час той самий');
+  eq(L.delayTask(t, 30, nov(23, 40)), null, 'за північ — не відкладаємо, лише «На завтра»');
+  const old = L.delayTask(T('Звіт', 1, '2026-11-02', 1, { time: '09:00' }), 60, nov(10, 0));
+  eq([old.due, old.time, old.moved, old.planTime], ['2026-11-03', '11:00', 1, '09:00'], 'прострочена — на сьогодні й рахується перенесеною');
+  const p = L.postpone(b, '2026-11-03');
+  eq([p.due, p.time, p.delays, p.planTime, p.moved], ['2026-11-04', '11:42', 0, '', 1], 'на завтра — зі своїм часом');
+  const s = fresh();
+  const r = L.delayTask(T('Ліки', 2, '2026-11-03', 1, { time: '09:00', rep: { k: 'daily' } }), 60, nov(9, 10));
+  s.tasks.push(r);
+  eq([r.time, L.completeTask(s, r.id, nov(10, 20)).spawned.time], ['10:10', '09:00'], 'наступна в серії — у звичний час');
+  const c = L.cleanState({ ...L.defaultState(), tasks: [a] }, nov(12, 0)).state.tasks[0];
+  eq([c.delays, c.planTime, c.time], [1, '11:42', '12:50'], 'позначка переживає перезапуск');
+});
+
+test('«Відкласти»: головна дія мовчить до нового часу, потім каже, що справу відкладали', () => {
+  const s = fresh();
+  const t = T('Рапорт', 1, '2026-11-03', 1, { time: '11:42' });
+  s.tasks.push(t);
+  eq(L.nextAction(s, nov(11, 47)).main.reason, 'Обовʼязково сьогодні, мало бути о 11:42');
+  const a = L.delayTask(t, 60, nov(11, 47));
+  s.tasks[0] = a;
+  s.later[`task:${a.id}`] = L.localAt(a.due, L.parseHM(a.time));
+  eq(L.nextAction(s, nov(12, 0)).list.some((c) => c.id === a.id), false, 'відкладене не показується');
+  eq(L.deferredUntil(s, `task:${a.id}`, nov(12, 0)) % 1440, 770, 'до 12:50');
+  eq(L.nextAction(s, nov(12, 50)).main.reason, 'Обовʼязково сьогодні, відкладено на 12:50');
+  eq(L.deferredUntil(s, `task:${a.id}`, nov(12, 50)), 0, 'час настав');
+});
+
+/* ---------- Задуми ---------- */
+
+test('Задуми: перша ідея стає головною, решта — у скриньці; порожнє не записується', () => {
+  const x = I.defaultIdeas();
+  eq(I.addIdea(x, '   ', 'create', nov(9, 0)), null);
+  const a = I.addIdea(x, 'Подкаст про туризм', 'create', nov(9, 0));
+  const b = I.addIdea(x, 'Продавати фото', 'money', nov(9, 5));
+  const v = I.ideaView(x);
+  eq([x.focus, v.focus.id, v.inbox.map((y) => y.title), b.kind], [a.id, a.id, ['Продавати фото'], 'money']);
+  I.setFocus(x, b.id);
+  eq([I.ideaView(x).focus.title, I.ideaView(x).inbox.length], ['Продавати фото', 1]);
+  I.parkIdea(x, a.id, nov(10, 0));
+  eq([I.ideaView(x).parked.length, I.ideaView(x).inbox.length], [1, 0]);
+  I.reopenIdea(x, a.id);
+  eq(I.ideaView(x).inbox.length, 1);
+});
+
+test('Задуми: крок — день у журналі, «Скасувати» прибирає; відвантаження — справжні дні й кроки', () => {
+  const x = I.defaultIdeas();
+  const a = I.addIdea(x, 'Подкаст', 'create', nov(9, 0, 1));
+  const s1 = I.addStep(a, 'Накидати три назви', nov(9, 1, 1));
+  I.addStep(a, 'Записати пробний випуск', nov(9, 2, 1));
+  eq([I.nextStep(a).t, I.stepToday(x, nov(20, 0))], ['Накидати три назви', false]);
+  I.doneStep(x, a.id, s1.id, nov(20, 30));
+  eq([I.nextStep(a).t, x.log['2026-11-03'], I.stepToday(x, nov(21, 0))], ['Записати пробний випуск', 1, true]);
+  eq(I.doneStep(x, a.id, s1.id, nov(20, 40)), null, 'повторно не зараховується');
+  I.logDay(x, nov(21, 0));
+  I.unlogDay(x, '2026-11-03');
+  eq(x.log['2026-11-03'], 1, '«Скасувати» прибирає лише свою позначку');
+  const res = I.shipIdea(x, a.id, nov(12, 0, 5));
+  eq([res.days, res.steps, x.focus, I.ideaView(x).shipped.length], [4, 1, '', 1]);
+  eq(I.shipIdea(x, a.id, nov(12, 0, 5)), null, 'двічі не відвантажується');
+});
+
+test('Задуми: час для задуму — у свою хвилину, лише поки сьогодні кроку не було', () => {
+  const s = fresh();
+  s.settings.lastBackupAt = nov(8, 0);
+  const a = I.addIdea(s.ideas, 'Подкаст', 'create', nov(9, 0, 1));
+  I.addStep(a, 'Накидати три назви', nov(9, 1, 1));
+  eq([I.ideaSlot(s.ideas, nov(19, 55)).active, I.ideaSlot(s.ideas, nov(20, 0)).active], [false, true]);
+  const c = L.nextAction(s, nov(20, 5)).list.find((y) => y.kind === 'idea');
+  eq([c.title, c.reason, c.key], ['Задум: Подкаст', 'Крок: Накидати три назви. 25 хв — і на сьогодні досить', `idea:${a.id}:2026-11-03`]);
+  I.logDay(s.ideas, nov(20, 30));
+  eq(L.nextAction(s, nov(20, 35)).list.some((y) => y.kind === 'idea'), false, 'після кроку — не нагадує');
+  s.ideas.at = '';
+  eq(I.ideaSlot(s.ideas, nov(21, 0)).on, false, 'без нагадування');
+});
+
+test('Статистика: «Крок до задуму» — від першої ідеї, сьогодні лише з кроком; порада, коли задум стоїть', () => {
+  const s = fresh();
+  eq(L.lifeStats(s, nov(12, 0)).cur.rows.ideas, { n: 0, of: 0 }, 'без ідей — рядок порожній');
+  I.addIdea(s.ideas, 'Подкаст', 'create', nov(9, 0, 1) - 5 * 864e5);
+  s.ideas.log['2026-10-30'] = 1;
+  let st = L.lifeStats(s, nov(12, 0));
+  eq([st.cur.rows.ideas, st.since], [{ n: 1, of: 6 }, '2026-10-27'], '28.10–02.11, сьогоднішній ще попереду');
+  eq([st.advice.id, st.advice.fact, st.advice.btn.tab], ['ideas', 'Крок до задуму — 1 з 6 днів.', 'ideas']);
+  ok(st.advice.act.startsWith('25 хвилин завтра о 20:00'), st.advice.act);
+  s.ideas.log['2026-11-03'] = 1;
+  st = L.lifeStats(s, nov(21, 0));
+  eq(st.cur.rows.ideas, { n: 2, of: 7 }, 'сьогодні з кроком — рахується');
+  eq(L.QUALITY.map((q) => q.id), ['morning', 'tasks', 'life', 'musts', 'checks', 'ideas', 'evening']);
+});
+
+test('Задуми: пошкоджені дані й резервна копія', () => {
+  const c = I.cleanIdeas({ list: [{ title: '' }, { id: 'a', title: 'Ок', kind: 'хто', steps: [{ t: '' }, { t: 'Крок', doneAt: 'x' }, 5] }, 7, { id: 'a', title: 'Дубль' }], focus: 'нема', at: '27:00', min: 7, log: { x: 1, '2026-11-01': 2, '2026-11-02': -1 }, timer: { id: 'a', start: 5, mins: 99 } }, nov(12, 0));
+  eq([c.list.length, c.list[0].kind, c.list[0].steps.length, c.list[0].steps[0].doneAt, c.focus, c.at, c.min, Object.keys(c.log), c.timer], [2, 'create', 1, 0, '', '20:00', 25, ['2026-11-01'], null]);
+  ok(c.list[1].id !== 'a', 'дубль ідентифікатора замінено');
+  eq(I.cleanIdeas({ at: '' }).at, '', 'вимкнене нагадування лишається вимкненим');
+  eq(I.cleanIdeas('x'), I.defaultIdeas());
+  const s = fresh();
+  const a = I.addIdea(s.ideas, 'Подкаст', 'create', nov(9, 0));
+  s.ideas.timer = { id: a.id, start: nov(20, 0), mins: 25 };
+  const r = L.readBackup(JSON.parse(JSON.stringify(L.makeBackup(s, 5))));
+  eq([r.ok, r.state.ideas.list[0].title, r.state.ideas.focus, r.state.ideas.timer, r.summary.ideas], [true, 'Подкаст', a.id, null, 1]);
 });
 
 test('Таймер «Фокусу» рахує залишок', () => {
