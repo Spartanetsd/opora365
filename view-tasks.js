@@ -156,7 +156,7 @@ function chrome(app) {
   };
 }
 
-const backdrop = () => ({ src: 'abstract-03.webp', kind: 'band', pos: 'center 40%' });
+const backdrop = () => ({ src: 'abstract-03.webp', kind: 'band', pos: 'center 62%' });
 
 /* ---------- Додавання ---------- */
 

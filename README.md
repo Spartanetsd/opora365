@@ -25,6 +25,13 @@
 
 Компактне меню (•••): Мій ранок, Усі справи (пошук, без дати, архів), Задуми, Вечірній підсумок, Інструменти, Режим дня, Налаштування, Резервні копії.
 
+## Нове у версії 3.2.1 — нові зображення
+
+- **«Сьогодні» у світлій темі** — нова картина: світанок, гори в тумані, сосна на скелі праворуч. Під головною дією тепер спокійний туман, тож картину більше не треба сильно вибілювати: її видно, а текст читається. Небо над сосною трохи продовжено вгору, щоб сосна стояла під годинником, а не за ним, — так само, як дерево на темній картині.
+- **«Задуми»** — планета зі світанком на обрії: заголовок сторінки й плитка на «Сьогодні». На екрані «Відвантажено» ракета стоїть просто на обрії планети, за нею сходить світанок.
+- **«Справи»** — новий фон заголовка: бірюзова стрічка світла з теплим відблиском.
+- Усі три — у високій якості (1086–1254 пікс. замість 369), разом менше 110 КБ.
+
 ## Нове у версії 3.2.0 — «Задуми»
 
 Власна справа — творча чи фінансова — найчастіше відкладається «на потім»: служба, родина, побут. «Задуми» перетворюють її на щоденну звичку на 25 хвилин — без бізнес-планів, балів і мотиваційних цитат. Відкриваються плиткою на «Сьогодні» або з меню.
@@ -117,14 +124,13 @@
 
 ### Які зображення варто оновити
 
-Назви файлів лишаються ті самі — код змінювати не потрібно: завантажте нові `.webp` замість старих і збільште `VERSION` у `sw.js`. Промпти — англійською, так генератори зображень розуміють їх точніше.
+Готово у 3.2.1: `light-theme.webp`, `abstract-02.webp`, `abstract-03.webp`. `abstract-01.webp` в інтерфейсі не використовується.
 
-1. **`light-theme.webp`** — «Сьогодні» у світлій темі. Зараз кружка й записник стоять у нижній половині, саме там, де текст головної дії. Потрібна та сама композиція, що й у темної `hero-landscape.webp`: предмет праворуч угорі, низ спокійний.
-   > Serene high-key sunrise landscape for a mobile app background, light theme. Pale sky-blue and soft teal palette with a warm golden sunrise glow low on the left, just above the distant hills. Misty layered mountains far away. A single small pine tree on a rock at the right edge, in the upper 40% of the frame only. One thin, translucent glass-like light arc across the sky. The lower 60% of the image is calm: soft morning mist and smooth gradient, no objects, no cups, no books, no people, no high-contrast details, because white cards and dark text will sit on top. Airy, minimal, matte, photographic, gentle depth of field. No text, no logos, no frames, no rounded corners. Portrait 3:4, 1320×1760 px.
-2. **`abstract-02.webp`** — тепер заголовок «Задумів» і екран «Відвантажено». Зараз це вирізка 369×369 пікс., на iPhone виглядає мʼякою. Потрібна та сама ідея у високій якості.
-   > Abstract cosmic scene for a dark mobile app header: a large luminous teal planet edge sweeping from the bottom-left to the top-right, its rim glowing cyan, a warm amber sunrise light rising from behind its rim; a small dark moon in the upper-left. Deep black-navy space (#0B1424), very few faint stars. Glassy smooth gradients, premium iOS wallpaper style. Keep the left third and the top-left calm and dark for white text. No text, no logos, no frames, no rounded corners. Square 1600×1600 px.
-3. Необовʼязково — **`abstract-01…09.webp`** у високій якості (зараз ~370 пікс.). Один промпт для всього набору, змінюйте лише головний колір: 03 — бірюзовий, 04 — блакитний, 05 — бурштиновий світанок, 06 — бузковий, 07 — синій, 08 — бузково-помаранчевий захід, 09 — бірюзово-синій.
-   > Minimal abstract background for a dark mobile app: deep navy base (#0B1424), one or two soft flowing ribbons of light in <colour>, gentle glass-like glow, smooth gradients, lots of calm dark space, no hard edges, no text, no logos, no frames, no rounded corners, no vignette border. Square 1600×1600 px.
+Необовʼязково — решта абстрактних фонів у високій якості (зараз ~370 пікс.): 04 «Статистика» — блакитний, 05 ранок — бурштиновий світанок, 06 доручення — бузковий, 07 інструменти — синій, 08 вечір — бузково-помаранчевий захід, 09 фокус — бірюзово-синій. Назви файлів лишаються ті самі; після заміни збільште `VERSION` у `sw.js`. Промпт — англійською, так генератори зображень розуміють його точніше; замість `<colour>` — колір англійською:
+
+> Minimal abstract background for a dark mobile app: deep navy base (#0B1424), one or two soft flowing ribbons of light in <colour>, gentle glass-like glow, smooth gradients, lots of calm dark space, no hard edges, no text, no logos, no frames, no rounded corners, no vignette border. Square 1600×1600 px.
+
+Якщо нова картина матиме інший розклад (світло не там, де в старій), позицію кадру підлаштовую в коді — це один рядок.
 
 ## Оновлення з версії 2 (з iPhone)
 
@@ -146,6 +152,8 @@
 
 Завантажте в репозиторій усі файли з архіву → зачекайте зелену ✓ → відкрийте ОПОРА → «Оновити». Ранкова підготовка, що триває, справи й перевірки зберігаються.
 
+- З 3.2.0 до 3.2.1 — 11 файлів: зображення `light-theme.webp`, `abstract-02.webp`, `abstract-03.webp` і `view-home.js`, `view-tasks.js`, `view-ideas.js`, `styles.css`, `sw.js`, `app.js`, `package.json`, `README.md`.
+- З 3.1.0 до 3.2.1 — 20 файлів: три зображення вище й усе, що змінилося у 3.2.0.
 - З 3.1.0 до 3.2.0 — 17 файлів, зображення ті самі. Нові: `logic-ideas.js`, `view-ideas.js`. Змінені: `app.js`, `logic.js`, `ui.js`, `icons.js`, `components.js`, `styles.css`, `view-home.js`, `view-tasks.js`, `view-deck.js`, `view-evening.js`, `view-settings.js`, `sw.js`, `tests.js`, `package.json`, `README.md`.
 - З 3.0.x — усі файли з архіву.
 

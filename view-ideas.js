@@ -336,7 +336,7 @@ const actions = {
     const iv = I.ideaView(app.state.ideas);
     if (screenOpen()) closeScreen();
     await new Promise((r) => setTimeout(r, 260));
-    openScreen(shipHtml(x, res, iv), { label: 'Відвантажено', bg: 'abstract-02.webp', bgPos: '40% center', cls: 'ship', onClose: () => app.render() });
+    openScreen(shipHtml(x, res, iv), { label: 'Відвантажено', bg: 'abstract-02.webp', bgPos: '76% center', cls: 'ship', onClose: () => app.render() });
   },
   ideaPickNext(app) {
     closeScreen();

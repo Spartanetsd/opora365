@@ -144,7 +144,7 @@ function chrome() {
 
 function backdrop(app) {
   return app.isLight()
-    ? { src: 'light-theme.webp', kind: 'hero', pos: '64% 46%' }
+    ? { src: 'light-theme.webp', kind: 'hero', pos: '96% 20%' }
     : { src: 'hero-landscape.webp', kind: 'hero', pos: '72% 50%' };
 }
 

@@ -231,8 +231,9 @@ html.kbd :is(.row, .row-main, .cl-item, .ev-opt, .sc-step):focus-visible { outli
 }
 :root[data-scheme="light"] .backdrop[data-kind="hero"] { background: #DCE8F3; }
 :root[data-scheme="light"] .backdrop[data-kind="hero"] .bd-shade {
-  /* Під головною дією — спокійне світле тло: предмети з картинки (чашка, дерево) не лягають під текст. */
-  background: linear-gradient(180deg, rgba(238, 243, 248, .78) 0%, rgba(238, 243, 248, .2) 26%, rgba(238, 243, 248, 0) 36%, rgba(238, 243, 248, .62) 50%, rgba(238, 243, 248, .86) 62%, rgba(238, 243, 248, .95) 78%, var(--bg) 100%);
+  /* Картина спокійна: угорі небо й сосна, під головною дією — туман. Легкий серпанок лише вгорі (дата й час)
+     і плавний перехід у тло сторінки внизу. */
+  background: linear-gradient(180deg, rgba(238, 243, 248, .42) 0%, rgba(238, 243, 248, .08) 22%, rgba(238, 243, 248, 0) 34%, rgba(238, 243, 248, 0) 52%, rgba(238, 243, 248, .3) 72%, rgba(238, 243, 248, .7) 88%, var(--bg) 100%);
 }
 /* У світлій темі темні ілюстрації показуються «вікном» із заокругленням, а не розтікаються по світлому тлу */
 :root[data-scheme="light"] .backdrop[data-kind="header"], :root[data-scheme="light"] .backdrop[data-kind="band"], :root[data-scheme="light"] .backdrop[data-kind="stage"] {
@@ -1277,6 +1278,9 @@ html.modal-open .toast { bottom: calc(var(--safe-b) + 18px + var(--kb)); }
 .ship-name { margin: 0; font-size: var(--t-lead); font-weight: 600; overflow-wrap: anywhere; }
 .ship-facts { margin: 16px 0 0; padding: 10px 14px; border-radius: var(--r-md); background: var(--panel); border: .5px solid var(--line); font-size: var(--t-small); line-height: 1.45; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .ship-note { margin: 12px 0 0; font-size: var(--t-meta); color: var(--text-2); }
+/* Відвантажено: ракета на обрії планети, за нею — світанок. Картина яскравіша вгорі, текст і кнопки — на темному. */
+:root:not([data-scheme="light"]) .screen.ship .scr-bg img { opacity: .95; }
+:root:not([data-scheme="light"]) .screen.ship .scr-bg::after { background: linear-gradient(180deg, rgba(8, 13, 22, .45) 0%, rgba(8, 13, 22, .06) 18%, rgba(8, 13, 22, .1) 36%, rgba(8, 13, 22, .62) 50%, rgba(8, 13, 22, .88) 66%, var(--c-bg) 100%); }
 @keyframes launch { 0% { opacity: 0; transform: translateY(40px) scale(.7); } 60% { opacity: 1; transform: translateY(-6px) scale(1.04); } 100% { opacity: 1; transform: none; } }
 
 /* Тони компонентів — наприкінці, щоб перекривати типові значення */
