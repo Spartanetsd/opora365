@@ -1154,8 +1154,9 @@ html.kb-open .scr-foot { bottom: -12px; padding-bottom: 12px; }
 .ev-done { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: var(--t-small); }
 .ev-done li { display: flex; gap: 8px; color: var(--text); }
 .ev-done li::before { content: ""; flex: none; width: 6px; height: 6px; margin-top: .5em; border-radius: 50%; background: var(--teal); }
-.ev-done .ev-more { color: var(--text-2); }
-.ev-done .ev-more::before { background: var(--track); }
+/* «Показати всі»: уся зроблена за день справа — одним дотиком, без переходу на інший екран */
+.ev-more { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin: 4px 0 -8px -2px; padding: 0 2px; border: 0; background: none; color: var(--mode-ink); font: inherit; font-size: var(--t-small); font-weight: 600; cursor: pointer; }
+.ev-more .i { width: 16px; height: 16px; }
 .ev-note { margin: 8px 0 0; font-size: var(--t-meta); color: var(--text-2); line-height: 1.45; }
 .ev-musts { display: flex; align-items: center; gap: 6px; }
 .ev-musts .i { width: 15px; height: 15px; color: var(--teal-ink); }

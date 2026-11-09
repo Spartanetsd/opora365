@@ -7,6 +7,8 @@ import { addTask, chooseDay } from './view-tasks.js';
 
 let moved = 0;
 let review = false;
+let allDone = false; // «і ще N» розгорнуто — до закриття екрана
+const DONE_SHOWN = 5;
 
 function remainingRow(t, ed) {
   const pr = L.PR[t.pr];
@@ -54,7 +56,8 @@ function eveningHtml(app) {
   if (s.ideas.log[ed.day]) done.push(fx ? `Крок до задуму: ${fx.title}` : 'Крок до задуму');
   const doneBlock = `<section class="ev-card" aria-labelledby="evDoneH">
     <h2 class="ev-h" id="evDoneH">${icon('checkCircle')}Що виконано<span class="ev-n">${done.length}</span></h2>
-    ${done.length ? `<ul class="ev-done">${done.slice(0, 5).map((t) => `<li>${esc(t)}</li>`).join('')}${done.length > 5 ? `<li class="ev-more">і ще ${done.length - 5}</li>` : ''}</ul>` : '<p class="ev-note">Позначених справ сьогодні немає.</p>'}
+    ${done.length ? `<ul class="ev-done" id="evDoneList">${(allDone ? done : done.slice(0, DONE_SHOWN)).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+    ${done.length > DONE_SHOWN ? `<button type="button" class="ev-more" id="evMoreBtn" data-act="evMore" aria-expanded="${allDone}" aria-controls="evDoneList">${allDone ? 'Згорнути' : `Показати всі — ще ${done.length - DONE_SHOWN}`}${icon(allDone ? 'up' : 'down')}</button>` : ''}` : '<p class="ev-note">Позначених справ сьогодні немає.</p>'}
   </section>`;
 
   const rem = ed.remaining;
@@ -102,6 +105,7 @@ function refresh(app) {
 export function openEvening(app, from = null) {
   moved = 0;
   review = false;
+  allDone = false;
   if ($('#sheet').open) closeSheet();
   openScreen(eveningHtml(app), {
     label: 'Вечірній підсумок',
@@ -163,6 +167,11 @@ const actions = {
     const ed = L.eveningData(app.state, Date.now());
     const id = el.dataset.id;
     app.commit((s) => { s.pin = s.pin.id === id && s.pin.date === ed.tomorrow ? { id: '', date: '' } : { id, date: ed.tomorrow }; }, { render: false });
+    refresh(app);
+  },
+  evMore(app) {
+    allDone = !allDone;
+    haptic();
     refresh(app);
   },
   evIdea(app, form) {
