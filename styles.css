@@ -1009,11 +1009,12 @@ dialog { color: var(--text); }
 .sheet {
   --surface: var(--surface-2);
   position: fixed;
-  inset: auto 0 var(--kb) 0;
+  /* Над клавіатурою, але ніколи не за верхнім краєм: щонайменше 240 пікс. панелі завжди на екрані */
+  inset: auto 0 min(var(--kb, 0px), calc(100% - 240px)) 0;
   width: min(100%, 620px);
   max-width: 100%;
   /* Не вища за видиму частину екрана над клавіатурою: заголовок і поле завжди на виду */
-  max-height: calc(var(--vvh, 100dvh) - var(--safe-t) - 10px);
+  max-height: max(240px, calc(var(--vvh, 100dvh) - var(--safe-t) - 10px));
   margin: 0 auto;
   padding: 0;
   border: 0;
@@ -1027,7 +1028,8 @@ dialog { color: var(--text); }
 .sheet.soft-in[open] { animation: sheet-soft-in var(--d2) var(--ease); }
 .sheet.dragging { transition: none; }
 .sheet:not(.dragging) { transition: transform var(--d2) var(--ease); }
-.sheet.closing { animation: sheet-out var(--d1) var(--ease-in) forwards; }
+/* [open] — щоб перекрити й «м’яку» появу (.soft-in[open]): панель із полем теж зʼїжджає донизу */
+.sheet.closing[open] { animation: sheet-out var(--d1) var(--ease-in) forwards; }
 .sheet::backdrop { background: var(--backdrop); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); animation: fade-in var(--d2) ease; }
 .sheet-grab { flex: none; display: grid; place-items: center; height: 18px; touch-action: none; }
 .sheet-grab span { width: 38px; height: 5px; border-radius: 3px; background: var(--line-2); }
@@ -1063,7 +1065,7 @@ form[data-type="must"] .only-task, form[data-type="task"] .only-must, form[data-
 /* ---------- Повноекранні екрани ---------- */
 
 /* Екран займає саме видиму частину: з клавіатурою — від верху видимої зони до клавіатури */
-.screen { position: fixed; inset: var(--vvt, 0px) 0 auto 0; width: 100%; height: var(--vvh, 100%); max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--bg); }
+.screen { position: fixed; inset: var(--vvt, 0px) 0 auto 0; width: 100%; height: max(320px, var(--vvh, 100%)); max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--bg); }
 .screen::backdrop { background: var(--bg); }
 .screen.rise[open] { animation: screen-in var(--d3) var(--ease); }
 .screen .ambient { position: absolute; }

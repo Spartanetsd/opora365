@@ -17,7 +17,7 @@ import evening from './view-evening.js';
 import settings, { openMenu } from './view-settings.js';
 import welcome, { openWelcome } from './view-welcome.js';
 
-const VERSION = '3.3.1';
+const VERSION = '3.3.2';
 
 const VIEWS = { home, morning, tasks, gear, deck, tools, stats, ideas };
 const TABS = [
@@ -397,25 +397,41 @@ function trackKeyboard() {
   const vv = window.visualViewport;
   if (!vv) return;
   const root = document.documentElement;
+  // Клавіатура буває лише тоді, коли пишете в поле. Без поля у фокусі будь-які «залишки» розмірів —
+  // хибні: iOS після згортання застосунку чи клавіатури інколи віддає старі або нульові розміри,
+  // і тоді панель «Нова справа» відʼїжджала за край, лишаючи на екрані тільки розмитий фон.
+  const editing = () => !!document.activeElement?.matches?.('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]), textarea, select');
   const set = () => {
+    const H = window.innerHeight;
     const pinched = vv.scale > 1.01; // збільшення пальцями — не клавіатура
-    const top = pinched ? 0 : Math.max(0, Math.round(vv.offsetTop));
-    const h = pinched ? window.innerHeight : Math.round(vv.height);
-    const kb = pinched ? 0 : Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    let top = Math.max(0, Math.round(vv.offsetTop));
+    let h = Math.round(vv.height);
+    const sane = !pinched && editing() && h >= 160 && h <= H + 1 && top <= H - 160;
+    if (!sane) { top = 0; h = H; }
+    const kb = sane ? Math.min(H - 160, Math.max(0, Math.round(H - vv.height - vv.offsetTop))) : 0;
     root.style.setProperty('--kb', `${kb}px`);
     root.style.setProperty('--vvt', `${top}px`);
     root.style.setProperty('--vvh', `${h}px`);
-    const open = window.innerHeight - h > 80;
+    const open = sane && H - h > 80;
     root.classList.toggle('kb-open', open);
     if (open) requestAnimationFrame(revealFocused);
   };
+  // Повторна звірка: клавіатура зʼявляється й ховається з анімацією, а iOS не завжди повідомляє про кінець.
+  const settle = () => { set(); setTimeout(set, 120); setTimeout(set, 450); };
   vv.addEventListener('resize', set);
   vv.addEventListener('scroll', set);
+  addEventListener('resize', set);
+  addEventListener('orientationchange', settle);
+  addEventListener('pageshow', settle);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) settle(); });
   document.addEventListener('focusin', () => {
+    settle();
     if (!root.classList.contains('kb-open')) return;
     setTimeout(revealFocused, 60);
     setTimeout(revealFocused, 360);
   });
+  // Перехід між полями — спершу focusout, одразу focusin: звіряємо трохи згодом, щоб панель не смикалась.
+  document.addEventListener('focusout', () => { setTimeout(set, 60); setTimeout(set, 450); });
   set();
 }
 
